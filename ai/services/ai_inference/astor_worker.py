@@ -123,7 +123,7 @@ _install_optional_perf_runtime_stubs()
 
 from analysis_job_progress import MapJobClaimChanged, MapJobClaimUnavailable, map_job_progress
 from astor_job_queue import (
-    JOBS_TABLE, MAP_JOB_TYPES, check_map_job_owner, renew_map_job_progress,
+    AstorQueueTemporarilyUnavailable, JOBS_TABLE, MAP_JOB_TYPES, check_map_job_owner, renew_map_job_progress,
     fetch_next_queued_job,
     claim_job,
     enqueue_job,
@@ -3234,7 +3234,7 @@ async def _sleep_after_worker_poll_error(
     exc: Exception,
 ) -> None:
     delay = _worker_poll_backoff_seconds(poll_interval, consecutive_errors)
-    if isinstance(exc, (httpx.HTTPError, asyncio.TimeoutError)):
+    if isinstance(exc, (httpx.HTTPError, asyncio.TimeoutError, AstorQueueTemporarilyUnavailable)):
         logger.warning(
             "worker %s failed. worker_id=%s consecutive_errors=%s retry_in=%.2fs err=%r",
             stage,
@@ -3679,7 +3679,6 @@ async def _worker_loop() -> None:
 
         try:
             job = await fetch_next_queued_job(job_types=job_types)
-            consecutive_poll_errors = 0
         except Exception as exc:
             consecutive_poll_errors += 1
             await _sleep_after_worker_poll_error(
@@ -3693,6 +3692,7 @@ async def _worker_loop() -> None:
             continue
 
         if not job:
+            consecutive_poll_errors = 0
             await asyncio.sleep(max(0.1, poll_interval))
             continue
 

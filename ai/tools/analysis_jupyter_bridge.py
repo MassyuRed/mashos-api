@@ -82,6 +82,22 @@ class AnalysisBridge(RequestHandler):
         finally:
             if pending is not None and not pending.done():
                 pending.cancel()
+        if response.code == 429:
+            retry_after = response.headers.get("Retry-After", "").strip()
+            if not (len(retry_after) <= 64 and retry_after.isascii() and retry_after.isprintable()):
+                retry_after = ""
+            self.set_header("Content-Type", "application/json")
+            self.set_header("Cache-Control", "no-store")
+            if started:
+                # The heartbeat already committed HTTP 200.
+                self.finish(json.dumps({"error": "analysis_bridge_rate_limited", "status": 429,
+                                        "retry_after": retry_after}))
+            else:
+                if retry_after:
+                    self.set_header("Retry-After", retry_after)
+                self.set_status(429)
+                self.write_error(429)
+            return
         if not started:
             self.set_status(response.code if 100 <= response.code <= 599 else 503)
         elif response.code != 200:

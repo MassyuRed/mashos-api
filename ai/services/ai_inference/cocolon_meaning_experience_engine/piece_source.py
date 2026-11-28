@@ -136,6 +136,17 @@ class PieceSourceMeaning:
     original_memo_only: bool = False
 
 
+def saved_action_link_marker(memo: str, action: str) -> str | None:
+    """Read an explicit link between two single-paragraph authored fields."""
+    if re.search(r'[\r\n]', memo + action) or not memo.rstrip().endswith(('。', '！', '!')):
+        return None
+    link = re.fullmatch(r'(?P<marker>だから[、，,])[^。！？!?「」『』]+[。！!]', action.rstrip())
+    if link is None:
+        return None
+    marker = link['marker']
+    return marker if marker not in memo and action.count(marker) == 1 else None
+
+
 def piece_source_text(meaning: PieceSourceMeaning) -> str:
     """Text coordinates belong to the source field, not its metadata frame."""
     from .piece_deep_insight import PieceDeepInsightAnswerMeaning

@@ -46,7 +46,10 @@ DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS = frozenset({
 REQUEST_SECONDS = 240
 ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
 PREVIOUS_RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v1"
-RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v2"
+GROUNDED_RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v2"
+RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v3"
+RECIPIENT_VOICE_VERSIONS = frozenset({PREVIOUS_RECIPIENT_VOICE_VERSION,
+    GROUNDED_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION})
 _RECIPIENT_VOICE_MESSAGE = """
 話し手はEmlis、聞き手は記録を書いた本人です。自分を示す必要がある箇所では「Emlisも」「Emlisには」のように文の一部にし、冒頭や文頭で「Emlis、」と相手を呼ぶ形にしません。記録を説明し直す前置きは省き、今その人に伝えたいことから自然に話します。"""
 _RECIPIENT_VOICE_GROUNDING_MESSAGE = """
@@ -54,6 +57,9 @@ _RECIPIENT_VOICE_GROUNDING_MESSAGE = """
 出来事と気持ちを並べて書いたことや、同じ日に記録されたことだけで、「それが原因で」「その結果」と因果を結ばないでください。原文では起きた時と振り返った時が違う場合は、その時点を保ちます。
 選択された強度は言葉の温度に反映し、弱・中・強を読み上げません。「少し好きだった」「大好きだった」など本人が明記した強弱と時制は保ちます。
 本人にとって大事な一点を短く受け止め、その一点を聞いてEmlisが本人に伝えたい言葉を返します。「という記録ですね」「記録を受け取りました」という報告だけで終えず、助言や原文にない理由を足さずに応じてください。"""
+_RECIPIENT_FOCUS_MESSAGE = """
+時を示す語は本人が結びつけた出来事や気持ちにだけ掛けます。選択欄の感情は出来事と別に本人が選んだ情報です。本人が理由を結びつけていない場合は、どの出来事にも理由を割り当てません。
+出来事や気持ちの確認を続けるより、そこで聞けた一点に応じた喜び、いたわり、願いを、今聞いたEmlisから伝えます。元の文を言い直すだけの一文や、資料の受領を知らせる結びは入れません。"""
 _RECIPIENT_HISTORY_MESSAGE = """
 別々の記録にあった気持ちや場面を、本人が結び付けて書いた根拠がある場合にだけ一つの理由・経過として語ります。時間が近いことや似た話題だけを根拠に、以前の状態が今も続く、片方がもう片方を引き起こしたと推測しません。関連がはっきりしなければ、今回の記録に応じます。"""
 _PREMIUM_CONTEXT_MESSAGE = (
@@ -1437,8 +1443,7 @@ def validate_reply(reply, request, *, check_initial_availability=False):
         raise _NaturalReplyValidationError("question_ending")
     if any(ord(x) < 32 and x not in "\n\t\r" for x in reply.text):
         raise _NaturalReplyValidationError("control_character")
-    if request.recipient_voice_version and request.recipient_voice_version in (
-            PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION):
+    if request.recipient_voice_version in RECIPIENT_VOICE_VERSIONS:
         addressed = repair_emlis_reply_address(reply.text, recipient_call=request.recipient_display_name_call)
         if not addressed:
             raise _NaturalReplyValidationError("empty_reply")
@@ -1483,8 +1488,7 @@ def validate_reply(reply, request, *, check_initial_availability=False):
 
 def build_natural_reply_messages(request, *, correction_target_context=False):
     messages = _build_natural_reply_messages(request, correction_target_context=correction_target_context)
-    if not request.recipient_voice_version or request.recipient_voice_version not in (
-            PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION):
+    if request.recipient_voice_version not in RECIPIENT_VOICE_VERSIONS:
         return messages
     messages[0]["content"] += _RECIPIENT_VOICE_MESSAGE
     if request.recipient_display_name_call:
@@ -1495,10 +1499,17 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         writer_material = json.loads(messages[1]["content"])
     except json.JSONDecodeError:
         return messages
-    if (request.recipient_voice_version == RECIPIENT_VOICE_VERSION and isinstance(writer_material, dict)
-            and ('current' in writer_material or 'records' in writer_material)
-            and not any(key in writer_material for key in ('本人が訂正した気持ち', '今回の本人の言葉'))):
-        messages[0]['content'] += _RECIPIENT_VOICE_GROUNDING_MESSAGE
+    if isinstance(writer_material, dict):
+        if (request.recipient_voice_version != PREVIOUS_RECIPIENT_VOICE_VERSION
+                and ('current' in writer_material or 'records' in writer_material)
+                and not any(key in writer_material for key in ('本人が訂正した気持ち', '今回の本人の言葉'))):
+            messages[0]['content'] += _RECIPIENT_VOICE_GROUNDING_MESSAGE
+        if (request.recipient_voice_version == RECIPIENT_VOICE_VERSION
+                and request.recipient_voice_version != PREVIOUS_RECIPIENT_VOICE_VERSION
+                and any(key in writer_material for key in ('current', 'records', '本人の気持ちの言葉',
+                    '今回の場面', '本人の補足', '今回の本人の言葉'))
+                and '本人が訂正した気持ち' not in writer_material):
+            messages[0]['content'] += _RECIPIENT_FOCUS_MESSAGE
     if (isinstance(writer_material, dict) and (writer_material.get("past_user_records")
             or any(isinstance(record, dict) and record.get("scope") == "PAST_RECORD"
                    for record in writer_material.get("records") or ()))):
@@ -1512,7 +1523,8 @@ def with_premium_reply_context(request, context):
         return request
     writer = json.loads(request.writer_material_json)
     if writer.get('source_context_version') not in (None, SOURCE_CONTEXT_VERSION,
-            RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION, ISSUED_ANSWER_RECEPTION_VERSION):
+            RECEIVED_ANSWER_CONTEXT_VERSION, PAID_RECEIVED_ANSWER_CONTEXT_VERSION, ISSUED_ANSWER_RECEPTION_VERSION,
+            *INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS):
         return request
     writer['prior_premium_context'] = context
     return replace(request, writer_material_json=_compact_json(writer))
@@ -1582,6 +1594,9 @@ def _build_natural_reply_messages(request, *, correction_target_context=False):
                         instructions = _INITIAL_GROUNDED_LISTENER_MESSAGE + '\n' + _INITIAL_GROUNDED_LISTENER_GUIDANCE[focus['kind']]
                     else:
                         instructions = _INITIAL_CONTEXTUAL_FOLLOW_MESSAGE + '\n' + _INITIAL_CONTEXTUAL_FOLLOW_GUIDANCE[focus['kind']]
+            if context := writer.get('prior_premium_context'):
+                instructions += _premium_context_instructions(context)
+                material['prior_premium_context'] = context
             return [{'role': 'system', 'content': instructions},
                     {'role': 'user', 'content': _compact_json(material)}]
         if context_version == INITIAL_STANDALONE_FEELING_CONTEXT_VERSION:

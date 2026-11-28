@@ -405,9 +405,12 @@ def test_provider_contract_failure_never_retries_redirects_or_exposes_body(defec
         return httpx.Response(200, json=packet)
     source = model_sources.SelfHostedAnalysisModelSource(endpoint=provider_environment()['COCOLON_ANALYSIS_MODEL_ENDPOINT'],
         model='synthetic-analysis-4b', api_key='synthetic-analysis-private-key', transport=httpx.MockTransport(handler))
-    with pytest.raises(TimeoutError if defect == 'timeout' else RuntimeError) as error:
+    error_type, code = {
+        'timeout': (TimeoutError, 'analysis_model_source_timeout'),
+        'busy': (model_sources.AnalysisModelRateLimited, 'analysis_model_rate_limited'),
+    }.get(defect, (RuntimeError, 'analysis_model_source_unavailable'))
+    with pytest.raises(error_type, match=fr'^{code}$'):
         run(source(prepared))
-    assert str(error.value) == ('analysis_model_source_timeout' if defect == 'timeout' else 'analysis_model_source_unavailable')
     assert len(calls) == 1
 
 

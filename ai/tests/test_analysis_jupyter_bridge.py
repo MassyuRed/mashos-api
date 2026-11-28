@@ -75,6 +75,26 @@ class BridgeTests(AsyncHTTPTestCase):
         assert response.code == 503 and b"private upstream text" not in response.body
         assert "Set-Cookie" not in response.headers
 
+    def test_upstream_rate_limit_keeps_retry_delay_before_and_after_heartbeat(self):
+        for delayed in (False, True):
+            async def reply(*args, **kwargs):
+                if delayed:
+                    await asyncio.sleep(0.04)
+                return HTTPResponse(HTTPRequest(UPSTREAM), 429, buffer=io.BytesIO(b'private upstream text'),
+                    headers=HTTPHeaders({"Retry-After": "90", "Set-Cookie": "must-not-forward=1"}))
+
+            with patch("ai.tools.analysis_jupyter_bridge.AsyncHTTPClient") as client, \
+                    patch("ai.tools.analysis_jupyter_bridge.HEARTBEAT_SECONDS", 0.01):
+                client.return_value.fetch = AsyncMock(side_effect=reply)
+                response = self.request()
+            assert b"private upstream text" not in response.body and "Set-Cookie" not in response.headers
+            if delayed:
+                assert response.code == 200 and response.body.startswith(b" ")
+                assert json.loads(response.body) == {"error": "analysis_bridge_rate_limited", "status": 429,
+                                                     "retry_after": "90"}
+            else:
+                assert response.code == 429 and response.headers["Retry-After"] == "90"
+
     def test_slow_model_sends_progress_before_exact_json_without_cookie(self):
         chunks = []
         async def delayed(*args, **kwargs):

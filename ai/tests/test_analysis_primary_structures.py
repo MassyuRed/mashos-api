@@ -68,6 +68,84 @@ def test_same_observed_action_can_have_two_bound_reasons():
     assert core._read_primary_structures(p, material, nodes, [axis])[0]['criterion'] == axis['criterion']
 
 
+@pytest.mark.parametrize('statement,should_admit', [
+    ('提出に間に合う日には連絡も引き受けた。', True),
+    ('提出に間に合う日には連絡も引き受ける。', False),
+    ('提出に間に合う日には同僚が連絡も引き受けた。', False),
+])
+def test_case_071_deadline_condition_highlights_the_two_actual_choices(statement, should_admit):
+    first = '翌日の提出に遅れる見込みだったので仕事を断った。'
+    prepared, plan, bodies = scenario(first, statement, version='karen.v3')
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(scope='across_records', anchors=['n1.u1.e1', 'n2.u1.e1'], decision_factor='提出',
+        criterion='提出への影響を見て、手伝える範囲を決めています。',
+        case_reading='翌日の提出に遅れる見込みだったため仕事を断りました。提出に間に合う日は連絡も引き受けました。',
+        heading='手伝える範囲')
+    material = json.loads(prepared.material_json)
+    axes = core._read_primary_structures(prepared, material, nodes, [axis])
+    if not should_admit:
+        assert not axes
+        return
+    admitted, = axes
+    assert admitted['criterion'] == axis['criterion']
+    assert admitted['node_refs'] == ['n1', 'n2']
+    assert admitted['description'].endswith(axis['case_reading'])
+    edge = core._v3_source_contrast_edge(material, nodes, axes, [])
+    assert edge['relation_kind'] == 'CONTEXT_CONTRAST'
+    assert edge['label'] == '翌日の提出に遅れる見込みだった → 仕事を断った／提出に間に合う → 連絡も引き受けた'
+
+
+def test_case_071_thought_conditions_still_draw_a_map_with_separate_action_fields():
+    from test_analysis_cumulative import source_snapshot
+
+    sources = (
+        ('翌日の提出に遅れる見込みだったので仕事を断った。', '相手へ代わりの相談先だけ伝えた。'),
+        ('提出に間に合う日には連絡も引き受けた。', '資料確認と連絡案を作った。'),
+    )
+    snapshot = source_snapshot(2)
+    for member, (thought, action) in zip(snapshot['members'], sources, strict=True):
+        member['original'].update(memo=thought, memo_action=action)
+    prepared = maps.prepare_semantic_map(OWNER, snapshot, prompt_version=core.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
+                                         primary_structures='karen.v3')
+    material = json.loads(prepared.material_json)
+    thought_refs = []
+    raw_plan, raw_nodes = [], {}
+    for record in material['records']:
+        node_id = 'n' + str(len(raw_plan) + 1)
+        plan_units, body_units = [], {}
+        for field in material['fields']:
+            if field['record'] != record['record']:
+                continue
+            unit_id = 'u' + str(len(plan_units) + 1)
+            if field['field_path'] == 'memo':
+                thought_refs.append(node_id)
+            quote = field['text']
+            roots = [dict(quote=quote, field=field['field'])]
+            plan_units.append(dict(evidence=roots))
+            body_units[unit_id] = dict(evidence_ref=f'{node_id}.{unit_id}', source_mode='RECORDED',
+                fact_parts={core._semantic_fact_part_key(roots, 0): quote}, unknowns=[])
+        raw_plan.append(dict(node_id=node_id, units=plan_units))
+        title = plan_units[0]['evidence'][0]['quote']
+        raw_nodes[node_id] = dict(units=body_units, node_kind='STATE_CONTEXT',
+                                 perspective='SELF', title=title, meaning='')
+    plan = dict(schema_version=core._semantic_v4_schema('PLAN'), nodes=raw_plan)
+    bodies = dict(schema_version=core._semantic_v4_schema('NODES'),
+                  plan_sha256=core.semantic_map_hash(plan), nodes=raw_nodes)
+    axis = dict(scope='across_records', anchors=[ref + '.u1.e1' for ref in thought_refs], decision_factor='提出',
+        criterion='提出への影響を見て、手伝える範囲を決めています。',
+        case_reading='翌日の提出に遅れる見込みだったため仕事を断りました。提出に間に合う日は連絡も引き受けました。',
+        heading='手伝える範囲')
+    joined = core._semantic_v4_join(plan, bodies)
+    relations = dict(schema_version=core._semantic_v4_schema('RELATIONS'),
+        nodes_sha256=core.semantic_map_hash(joined), qualification_review={}, primary_structures=[axis], edges=[],
+        overview=dict(node_refs=list(raw_nodes), title_proposal='', title='2件の記録を振り返って'))
+    accepted = core.semantic_node_local_v4_relations(prepared, plan, bodies, relations)
+    assert accepted['overview']['primary_structures'][0]['criterion'] == axis['criterion']
+    edge, = accepted['edges']
+    assert [edge['from'], edge['to']] == thought_refs
+    assert '→ 連絡も引き受けた' in edge['label']
+    assert [len(node['units']) for node in accepted['nodes']] == [2, 2]
+
 def observed_v2_repeated_conclusion():
     # The complete, authored axis from the second fictional RELATIONS run.
     return dict(anchors=['n1.u1.e1', 'n2.u1.e1'], scope='across_records',

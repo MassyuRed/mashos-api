@@ -3591,6 +3591,9 @@ _PRIMARY_STRUCTURE_STRONG_CLAIM = re.compile(
     r'唯一の基準|唯一.{0,8}判断|最も重要|もっとも重要|いつでも最優先|常に最優先|決定的な要因|強制|奪われ'
     r'|(?:問題|支障)(?:が|は)?(?:ない|なかった)|(?:確認|考慮)(?:せず|しなかった|の有無)')
 _CHOICE_LINK = re.compile(r'(?:な)?ので(?!す)|(?<=[たい])から(?=[、，,])')
+_CHOICE_TIME_CONDITION = re.compile(
+    r'(?<=[ぁ-ゖ])(?:日|とき|時)には')
+_CHOICE_SELF_ACTOR = re.compile(r'^(?:私|わたし|自分|僕|ぼく|俺)(?:は|が|から)[、，, ]*')
 _CHOICE_ACTION = (
     ('引き受け', '引き受けた', '引き受けました', '引き受けなかった', '引き受けませんでした'),
     ('断り', '断った', '断りました', '断らなかった', '断りませんでした'),
@@ -3637,13 +3640,20 @@ def _bound_choice(field, quote, sentences, *, allow_written_negative=False):
     if (quote not in sentences.get(field['field'], ())
             or not source_context_allows_finite_hints(*context)):
         return None
-    link = _CHOICE_LINK.search(quote)
+    causal_link = _CHOICE_LINK.search(quote)
+    link = causal_link or _CHOICE_TIME_CONDITION.search(quote)
     if link is None:
         return None
     condition = _CHOICE_LOCATION.sub('', quote[:link.start()]).strip()
     action = quote[link.end():].strip('、，, \t。．.')
     if not condition or not action or _CHOICE_LINK.search(action):
         return None
+    if causal_link is None:
+        # A time clause states the recorded scope. In this bounded reading
+        # a following subject marker can only belong to an explicit first person.
+        bare_action = _CHOICE_SELF_ACTOR.sub('', action, count=1)
+        if 'が' in bare_action or 'は' in bare_action:
+            return None
     reading = _proposition(action)
     if (reading is not None and reading.actor in ('SELF', 'UNSPECIFIED')
             and (reading.modality, reading.temporal_scope) == ('fact', 'past')
@@ -3659,8 +3669,14 @@ def _bound_choice(field, quote, sentences, *, allow_written_negative=False):
     # past host. This does not parse a new standalone action or its actor.
     for continuative, positive, polite, negative, negative_polite in _CHOICE_ACTION:
         for forms in ((positive, polite), (negative, negative_polite)):
-            if any(action.endswith(form) and _CHOICE_ARGUMENT.fullmatch(action[:-len(form)]) for form in forms):
-                return condition, action, forms, continuative if forms[0] == positive else ''
+            for form in forms:
+                if not action.endswith(form):
+                    continue
+                argument = action[:-len(form)]
+                if causal_link is None and argument.endswith('も'):
+                    argument = argument[:-1] + 'を'
+                if _CHOICE_ARGUMENT.fullmatch(argument):
+                    return condition, action, forms, continuative if forms[0] == positive else ''
     return None
 
 
@@ -3819,7 +3835,7 @@ def _v3_choice_contrast_edge(refs, pair, edges, *, units=None):
             'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
 
 
-def _v3_merge_choice_contrast_edges(material, nodes, bindings, edges):
+def _v3_admitted_choice_contrast_edges(material, nodes, bindings, edges):
     """Draw only the unique complete choice pair already used by an admitted reading."""
     origins = _primary_structure_origins(material, nodes)
     sentences = _semantic_display_sentences(material)
@@ -4000,7 +4016,8 @@ def _v3_read_witnessed_choice_contrasts(prepared, material, nodes, edges, retain
             continue
         if field['field_path'] == 'memo_action' and (factors := written_structure_factors(quote)):
             settlements.append(factors)
-        if field['field_path'] == 'memo' and (choice := _bound_choice(field, quote, sentences, allow_written_negative=True)):
+        if (field['field_path'] == 'memo' and _CHOICE_LINK.search(quote)
+                and (choice := _bound_choice(field, quote, sentences, allow_written_negative=True))):
             condition, action, _, _ = choice
             if (quote.startswith(condition) and action.startswith('私は')
                     and unit['fact'] == quote and node['title'] == quote):
@@ -4120,7 +4137,9 @@ def _v3_single_choice_matches(axis, factor, origins, sentences, *, allow_written
         context = '(?:' + re.escape(source_prefix) + ')?' if source_prefix else ''
         outcomes = '|'.join(re.escape(prefix + form) for prefix in dict.fromkeys((argument, bare_argument))
                             for form in forms)
-        case = rf'{context}{re.escape(condition)}(?:なので|ので|だったため|ため)[、，, ]*(?:{outcomes})[。．.]'
+        connector = (r'(?:なので|ので|だったため|ため)' if _CHOICE_LINK.search(origin[3])
+                     else r'(?:日|とき|時)には')
+        case = rf'{context}{re.escape(condition)}{connector}[、，, ]*(?:{outcomes})[。．.]'
         outcome_text = axis['criterion'].replace(condition, '', 1)
         unsupported_outcome = any(form in outcome_text for _, *variants in _CHOICE_ACTION
                                   for form in variants if form not in forms)
@@ -4421,14 +4440,14 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
     edges = [{k: v for k, v in edge.items() if k not in {'from_source', 'to_source'}}
              for edge in raw_edges] if source_cued else raw_edges
     if 'primary_structures' in packet:
-        derive_merge_edges = (merge_source_reading and not received_plan
-            and material.get('history_stage', {}).get('kind') == 'MERGE'
+        stage = material.get('history_stage', {}).get('kind')
+        derive_contrast_edges = (not received_plan and (stage is None or (merge_source_reading and stage == 'MERGE'))
             and material.get('primary_structure_reading') == 'karen.v3')
-        bindings = [] if derive_merge_edges else retained_axes
+        bindings = [] if derive_contrast_edges else retained_axes
         axes = _read_primary_structures(
             prepared, material, nodes, packet['primary_structures'], retained=bindings)
-        if derive_merge_edges and bindings:
-            _v3_merge_choice_contrast_edges(material, nodes, bindings, edges)
+        if derive_contrast_edges and bindings:
+            _v3_admitted_choice_contrast_edges(material, nodes, bindings, edges)
             if retained_axes is not None:
                 retained_axes.extend(bindings)
         if material.get('primary_structure_reading') == 'karen.v3':

@@ -229,5 +229,42 @@ class MapProgressTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requeue.await_args.kwargs['error'], 'analysis_model_rate_limited')
 
 
+class WorkerPostgrestPollTests(unittest.IsolatedAsyncioTestCase):
+    async def test_queue_fetch_and_claim_surface_only_transient_postgrest_codes(self):
+        with patch.object(queue, 'ensure_supabase_config'), \
+                patch.object(queue, 'sb_get', AsyncMock(side_effect=[
+                    response(503, {'code': 'PGRST002', 'message': 'private response discarded'}),
+                    response(503, {'code': 'other'}), response(200, []),
+                ])), patch.object(queue, 'sb_patch', AsyncMock(side_effect=[
+                    response(504, {'code': 'PGRST003'}), response(200, []),
+                ])) as patch_row:
+            with self.assertRaisesRegex(queue.AstorQueueTemporarilyUnavailable, '^PGRST002$'):
+                await queue.fetch_next_queued_job()
+            self.assertIsNone(await queue.fetch_next_queued_job())
+            self.assertIsNone(await queue.fetch_next_queued_job())
+            with self.assertRaisesRegex(queue.AstorQueueTemporarilyUnavailable, '^PGRST003$'):
+                await queue.claim_job(job_key='job', worker_id='worker', attempts=0)
+            patch_row.assert_awaited_once()
+            self.assertIsNone(await queue.claim_job(job_key='job', worker_id='worker', attempts=0))
+
+    async def test_worker_caps_backoff_and_resumes_ordinary_poll_after_recovery(self):
+        import astor_worker as worker
+
+        job = SimpleNamespace(job_key='job', attempts=0)
+        fetch_failed = queue.AstorQueueTemporarilyUnavailable('PGRST002')
+        claim_failed = queue.AstorQueueTemporarilyUnavailable('PGRST003')
+        with patch.dict(worker.os.environ, {'ASTOR_WORKER_POLL_INTERVAL_SECONDS': '1'}), \
+                patch.object(worker, '_run_worker_maintenance', AsyncMock()), \
+                patch.object(worker, 'fetch_next_queued_job', AsyncMock(side_effect=[
+                    fetch_failed, job, job, fetch_failed, fetch_failed, fetch_failed, fetch_failed,
+                    None, fetch_failed, asyncio.CancelledError(),
+                ])), patch.object(worker, 'claim_job', AsyncMock(side_effect=[claim_failed, claim_failed])), \
+                patch.object(worker.asyncio, 'sleep', AsyncMock()) as sleep:
+            with self.assertRaises(asyncio.CancelledError):
+                await worker._worker_loop()
+        self.assertEqual([call.args for call in sleep.await_args_list],
+                         [(1.0,), (2.0,), (4.0,), (8.0,), (16.0,), (30.0,), (30.0,), (1.0,), (1.0,)])
+
+
 if __name__ == '__main__':
     unittest.main()

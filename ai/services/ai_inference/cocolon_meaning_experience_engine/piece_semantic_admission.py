@@ -67,15 +67,28 @@ def _piece_model_uses_memo_only(source, profile):
     their existing reading contracts. The original saved record stays bound
     even though the action is unavailable as artwork material.
     """
-    from .piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+    from .piece_source import build_piece_source_meaning, saved_action_link_marker
+    from .piece_v1c import MODEL_MEMO_SELECTION_PROFILE, compile_piece_artifact_plan
+    from piece_v2_contract import PieceContractError
     from piece_v2_generation import PieceSourceSnapshot
 
     if (profile != MODEL_MEMO_SELECTION_PROFILE or type(source) is not PieceSourceSnapshot
             or source.saved_original_json is None):
         return False
     record = json.loads(source.saved_original_json)
-    return isinstance(record, dict) and all(
-        isinstance(record.get(field), str) and record[field].strip() for field in ('memo', 'memo_action'))
+    if not isinstance(record, dict) or not all(
+            isinstance(record.get(field), str) and record[field].strip() for field in ('memo', 'memo_action')):
+        return False
+    if saved_action_link_marker(record['memo'], record['memo_action']) is None:
+        return True
+    try:
+        meaning = build_piece_source_meaning(source, expected_owner_id=source.owner_id,
+            expected_saved_input_id=source.saved_input_id, expected_source_version=source.source_version)
+        return len(compile_piece_artifact_plan(meaning).block_node_ids) != 2
+    except PieceContractError:
+        # An action the existing reader cannot verify does not stop the
+        # ordinary Piece from using the independently eligible thought.
+        return True
 
 
 def prepare_piece_model_request(request, *, realization_profile=None):

@@ -295,7 +295,8 @@ def test_complete_user_choice_field_is_retained_and_multiple_source_composition_
     assert if_route.admit_if_model_response(prepared, response(prepared, value)).status is EngineStatus.REJECTED
 
 
-def test_analyzed_branch_keeps_person_alternatives_and_requires_a_conditional_next_step():
+@pytest.mark.parametrize('use_person_choices', [False, True])
+def test_analyzed_branch_native_grammar_and_cmee_preserve_conditions_and_next_step(use_person_choices):
     from test_analysis_premium_structure_relations import COEXISTENCE, _artifact
 
     artifact, _, _ = _artifact(COEXISTENCE)
@@ -306,7 +307,8 @@ def test_analyzed_branch_keeps_person_alternatives_and_requires_a_conditional_ne
         base_route_ref=if_route.observed_route_reference(artifact.reference, 'n1'),
         base_projection_json=json.dumps(projection), base_private_evidence_json=json.dumps(artifact.private_evidence()),
         constraints=tuple(source(f'constraint-{i}', text) for i, text in enumerate(constraints)),
-        scenario_choices=tuple(source(f'choice-{i}', text) for i, text in enumerate(alternatives)))
+        scenario_choices=tuple(source(f'choice-{i}', text)
+                               for i, text in enumerate(alternatives if use_person_choices else ())))
     prepared = if_route.prepare_if_model_request(req)
     material = json.loads(prepared.messages()[1]['content'])
     assert material['branch_context']['primary_structures'][0]['criterion'] == projection['overview']['primary_structures'][0]['criterion']
@@ -318,22 +320,65 @@ def test_analyzed_branch_keeps_person_alternatives_and_requires_a_conditional_ne
         proposal['required_conditions'] = [dict(condition_id=f'c{i}', text=text, source_refs=[i + 1])
                                            for i, text in enumerate(constraints, 1)]
     assert if_route.admit_if_model_response(prepared, response(prepared, value)).reason_codes == ('analysis_if_conditional_route_incomplete',)
+    from ai.tools.serve_emlis_natural_reply import semantic_json_parser
+
+    def native_accepts(packet):
+        raw = json.dumps(packet, ensure_ascii=False, separators=(',', ':'))
+        parser = semantic_json_parser(prepared.messages(), ''.join(dict.fromkeys(raw)))
+        for char in raw:
+            if char not in parser.get_allowed_characters():
+                return False
+            parser = parser.add_character(char)
+        return parser.can_end()
+
     for index, proposal in enumerate(value['scenarios']):
-        proposal['label'] = alternatives[index]
-        proposal['nodes'][1].update(origin='USER_CHOICE', text=alternatives[index], source_refs=[index + 4])
+        choice, unknown = proposal['nodes'][1:]
+        proposal['nodes'][0]['node_id'] = 'anchor_1'
+        choice.update(node_id='choice')
+        if use_person_choices:
+            proposal['label'] = alternatives[index]
+            choice.update(origin='USER_CHOICE', text=alternatives[index], source_refs=[index + 4])
+        unknown.update(node_id='unknown')
         proposal['nodes'].insert(2, dict(node_id='next', step_kind='POSSIBLE_CHOICE', origin='SIMULATED_EXTENSION',
-            text=f'仮に、方法{index + 1}で次の予定を確かめる。', anchor_ref=None, source_refs=[], unknown_reasons=[]))
-        proposal['edges'][1].update(to='next', condition_refs=['c1'])
-        proposal['edges'].append(dict(edge_id='e3', **{'from': 'next', 'to': 'after'}, condition_refs=[]))
+            text=f'先に目を通した資料を使い、方法{index + 1}で次の予定を確かめる。',
+            anchor_ref=None, source_refs=[], unknown_reasons=[]))
+        proposal['required_conditions'] = [
+            dict(condition_id=f'constraint_{i}', text=text, source_refs=[i + 1])
+            for i, text in enumerate(constraints, 1)
+        ] + [dict(condition_id='next_condition', text='提出までに資料を読める時間が残っているか確かめる。',
+                   source_refs=[])]
+        proposal['edges'] = [
+            {'edge_id': 'anchor_1_to_choice', 'from': 'anchor_1', 'to': 'choice', 'condition_refs': []},
+            {'edge_id': 'choice_to_next', 'from': 'choice', 'to': 'next', 'condition_refs': ['next_condition']},
+            {'edge_id': 'next_to_unknown', 'from': 'next', 'to': 'unknown', 'condition_refs': []},
+        ]
+    assert native_accepts(value)
     result = if_route.admit_if_model_response(prepared, response(prepared, value))
     assert result.status is EngineStatus.GENERATED, result.reason_codes
     stored = result.artifact.to_storage()
     shown = if_route.from_storage(stored, authenticated_owner_scope=OWNER).safe_projection(authenticated_owner_scope=OWNER)
-    assert tuple(proposal['nodes'][1]['visible_label'] for proposal in shown['scenarios']) == alternatives
-    assert all(proposal['edges'][1]['visible_condition_labels'] for proposal in shown['scenarios'])
-    assert all(tuple(proposal['required_conditions']) == constraints for proposal in shown['scenarios'])
-    value['scenarios'][1]['required_conditions'].pop()
-    assert if_route.admit_if_model_response(prepared, response(prepared, value)).reason_codes == ('analysis_if_model_constraint_unbound',)
+    if use_person_choices:
+        assert tuple(proposal['nodes'][1]['visible_label'] for proposal in shown['scenarios']) == alternatives
+    assert all(proposal['edges'][1]['visible_condition_labels'] ==
+               ['提出までに資料を読める時間が残っているか確かめる。'] for proposal in shown['scenarios'])
+    assert all(tuple(proposal['required_conditions'][:2]) == constraints for proposal in shown['scenarios'])
+
+    shallow = deepcopy(value)
+    shallow['scenarios'][0]['nodes'].pop(2)
+    shallow['scenarios'][0]['edges'][1:] = [
+        {'edge_id': 'choice_to_unknown', 'from': 'choice', 'to': 'unknown', 'condition_refs': []},
+    ]
+    assert not native_accepts(shallow)
+    assert if_route.admit_if_model_response(prepared, response(prepared, shallow)).reason_codes == (
+        'analysis_if_conditional_route_incomplete',)
+    repeated = deepcopy(value)
+    repeated['scenarios'][0]['nodes'][2]['text'] = repeated['scenarios'][0]['nodes'][1]['text']
+    assert if_route.admit_if_model_response(prepared, response(prepared, repeated)).reason_codes == (
+        'analysis_if_conditional_route_incomplete',)
+    value['scenarios'][1]['required_conditions'].pop(1)
+    assert not native_accepts(value)
+    assert if_route.admit_if_model_response(prepared, response(prepared, value)).reason_codes == (
+        'analysis_if_model_constraint_unbound',)
 
 
 def test_rehashed_legacy_partial_user_choice_is_also_rejected_on_saved_read():

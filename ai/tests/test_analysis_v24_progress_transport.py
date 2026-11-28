@@ -110,7 +110,7 @@ def test_default_transport_still_enforces_one_stage_clock(monkeypatch, merge_exc
     assert len(seen) == 2 and seen[0] == 210 and 30 < seen[1] <= 35
 
 
-@pytest.mark.parametrize('failure', [429, 503, 'cancel', 'late', 'invalid_content'])
+@pytest.mark.parametrize('failure', [429, 503, 'heartbeat_429', 'cancel', 'late', 'invalid_content'])
 @pytest.mark.parametrize('failed_phase', ['PLAN', 'NODES', 'RELATIONS'])
 def test_failed_phase_never_posts_again(monkeypatch, merge_exchange, failed_phase, failure):
     stage, expected = merge_exchange
@@ -139,6 +139,9 @@ def test_failed_phase_never_posts_again(monkeypatch, merge_exchange, failed_phas
                     raise asyncio.CancelledError
                 if failure == 'invalid_content':
                     return successful_response('{}')
+                if failure == 'heartbeat_429':
+                    return httpx.Response(200, content=b' ' + json.dumps(dict(
+                        error='analysis_bridge_rate_limited', status=429, retry_after='90')).encode())
                 if failure != 'late':
                     return httpx.Response(failure, headers={'Retry-After': '90'})
                 elapsed += 221
@@ -149,7 +152,7 @@ def test_failed_phase_never_posts_again(monkeypatch, merge_exchange, failed_phas
         if failure == 'cancel':
             with pytest.raises(asyncio.CancelledError):
                 await model_source(stage, handler)(stage, per_phase=True)
-        elif failure == 429:
+        elif failure in (429, 'heartbeat_429'):
             with pytest.raises(sources.AnalysisModelRateLimited, match='analysis_model_rate_limited') as captured:
                 await model_source(stage, handler)(stage, per_phase=True)
             assert captured.value.retry_after == 90

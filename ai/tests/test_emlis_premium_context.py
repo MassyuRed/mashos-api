@@ -7,7 +7,10 @@ import httpx
 import pytest
 
 import kokoro_weather_service as weather
-from cocolon_meaning_experience_engine.natural_reply import build_natural_reply_messages
+from cocolon_meaning_experience_engine.natural_reply import (
+    INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, NaturalReply, QWEN_9B_NATURAL_ALIAS,
+    build_natural_reply_messages,
+)
 from test_analysis_cumulative import OWNER
 from test_analysis_cumulative_model_source import sql_source
 from test_analysis_interpretation_correction_sources import sql_script
@@ -19,12 +22,25 @@ from test_emlis_q3_application import qdb
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('initial_follow', [False, True])
 def test_prior_map_and_chart_reach_only_premium_writer_and_invalidate_saved_reply(
-        natural_case, qdb, monkeypatch, tier):
+        natural_case, qdb, monkeypatch, tier, initial_follow):
     user, parent, service, calls = natural_case
     qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
     service.premium_context_enabled = True
     service.natural_questions_enabled = False
+    if initial_follow:
+        memo = '見本帳にあった青い縞が大好きでした。'
+        qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+        service.initial_observation_follow_enabled = True
+
+        async def follow_source(material):
+            calls.append(material)
+            return NaturalReply(f'「{memo}」\n\nどの模様に惹かれていたのか、Emlisも聞けてうれしいです。',
+                                QWEN_9B_NATURAL_ALIAS, material.source_prefix_ref)
+
+        follow_source.model = QWEN_9B_NATURAL_ALIAS
+        service.natural_reply_source = follow_source
     map_ref = {'id': str(uuid4()), 'version': 1, 'guard': 'bound-map-sources', 'visibility': 'same',
                'period_end': '2026-01-01T00:00:00Z'}
     structures = [{'title': '期限を守る余地', 'description': '提出と助け合いを両立できる時間を見ています。'}]
@@ -55,6 +71,12 @@ def test_prior_map_and_chart_reach_only_premium_writer_and_invalidate_saved_repl
     assert result['current_observation'] and len(calls) == 1
     messages = build_natural_reply_messages(calls[0])
     material = json.loads(messages[-1]['content'])
+    if initial_follow:
+        writer = json.loads(calls[0].writer_material_json)
+        assert writer['source_context_version'] == INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION
+        assert material['本人の気持ちの言葉'] == '大好き'
+        assert material['本人が書いた好みの時制'] == '過去'
+        assert '今聞いたEmlis' in messages[0]['content']
     assert 'prior_premium_context' not in json.loads(calls[0].material_json)
     assert run(service.get(user, parent))['current_observation'] == result['current_observation']
     if tier != 'premium':

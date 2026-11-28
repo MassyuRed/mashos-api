@@ -104,6 +104,13 @@ class AnalysisModelRateLimited(RuntimeError):
                 pass
 
 
+def _raise_on_bridge_rate_limit(data):
+    if (type(data) is dict and set(data) == {'error', 'status', 'retry_after'}
+            and data['error'] == 'analysis_bridge_rate_limited' and data['status'] == 429
+            and type(data['retry_after']) is str and len(data['retry_after']) <= 64):
+        raise AnalysisModelRateLimited(data['retry_after'])
+
+
 def _semantic_message_bytes(prepared):
     return len(json.dumps(prepared.messages(), ensure_ascii=False,
         separators=(',', ':'), allow_nan=False).encode('utf-8'))
@@ -174,6 +181,7 @@ class SelfHostedAnalysisModelSource:
                         if len(body) > MAX_RESPONSE_BYTES:
                             raise RuntimeError('analysis_model_source_unavailable')
             data = json.loads(body)
+            _raise_on_bridge_rate_limit(data)
             if type(data) is not dict or data.get('model') != self.model:
                 raise ValueError
             choices = data.get('choices')
@@ -304,6 +312,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                     stage = 'response_json'
                     data = json.loads(payload)
                     # A heartbeat commits HTTP 200 before the native result.
+                    _raise_on_bridge_rate_limit(data)
                     if data == {'error': 'analysis_bridge_unavailable', 'status': 503}:
                         stage = 'bridge_unavailable'
                         raise ValueError('phase_bridge_unavailable')
@@ -438,6 +447,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                         if len(body) > MAX_RESPONSE_BYTES:
                             raise RuntimeError('analysis_model_source_unavailable')
             data = json.loads(body)
+            _raise_on_bridge_rate_limit(data)
             if type(data) is not dict or data.get('model') != self.model:
                 raise ValueError
             choices = data.get('choices')

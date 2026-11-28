@@ -827,7 +827,7 @@ async function run() {
   await verifyEffectiveEmlisControls();
   await db.exec('reset role');
   await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
-    '20261128053620_deep_insight_answer_refresh.sql'), 'utf8'));
+    '20261128054929_deep_insight_answer_refresh.sql'), 'utf8'));
   await verifyDurableAnswerRefresh();
 
   for (const role of ['anon', 'authenticated']) {

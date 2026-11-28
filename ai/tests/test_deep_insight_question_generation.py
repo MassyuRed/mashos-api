@@ -70,7 +70,7 @@ def reason_premise(requested="どんな理由から", **changes):
 
 
 def run(original, plan, question=BODY, *, reading=None, extraction=None, premise=None,
-        comparison=None, alternative=None):
+        comparison=None, alternative=None, rewrite=None):
     prepared, sources = prepare_question_material(original, lane="records", theme=None)
     calls = []
 
@@ -82,7 +82,7 @@ def run(original, plan, question=BODY, *, reading=None, extraction=None, premise
             assert alternative is not None
             response = alternative
         elif system in (WRITE_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE):
-            response = {"question": question}
+            response = {"question": rewrite if "rewrite" in payload and rewrite is not None else question}
         elif system.startswith(_PRIOR_ANSWER_EVIDENCE_MESSAGE):
             response = extraction
         elif system.startswith(_PRIOR_ANSWER_PREMISE_MESSAGE):
@@ -121,6 +121,26 @@ def test_plan_write_read_are_separate_and_receipt_resolves_original():
     assert receipt["start"] == 2 and original_text[receipt["start"]: receipt["end"]] == QUOTE
     assert receipt["literal_sha256"] == hashlib.sha256(QUOTE.encode()).hexdigest()
     assert candidate.question_key == "deep-insight-target-" + receipt["target_key"]
+
+
+@pytest.mark.parametrize("vague", ["どんなときですか？", "そのとき、どう思いましたか？"])
+def test_record_question_rewrites_an_unbound_body_before_issue(vague):
+    text = "発表前には話す順番を何度も確認した"
+    plan = ask(focus="CONDITION", quote=text, ask="話す順番を一度確認するだけで進められる条件")
+    specific = "話す順番を一度確認するだけで発表に進めるのは、どんなときですか？"
+    original = material(source(text + "。"))
+
+    result, calls = run(original, plan, vague, rewrite=specific)
+    assert result.disposition == "selected"
+    assert result.candidate.text == f"「{text}」と書いていましたが、{specific}"
+    assert [prompt for prompt, _ in calls] == [
+        PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
+    ]
+    assert calls[2][1]["ask"] == plan["ask"] and calls[3][1]["question"] == result.candidate.text
+
+    result, calls = run(original, plan, vague)
+    assert result.disposition == "rejected" and result.rejection_stage == "writer"
+    assert [prompt for prompt, _ in calls] == [PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE]
 
 
 def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():

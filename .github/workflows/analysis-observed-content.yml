@@ -8,6 +8,7 @@ name: Analysis observed content
       - agent/cmee-continuation-20261124
       - agent/cmee-normal-emlis-fixes-20261125
       - agent/watashi-map-plan-views-20261125
+      - agent/cmee-ordinary-fixes-20261128
     paths:
       - .github/workflows/analysis-observed-content.yml
       - ai/services/ai_inference/cocolon_meaning_experience_engine/**
@@ -363,6 +364,7 @@ jobs:
           ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_q3_application.py::test_stale_attempt_and_changed_history_return_conflict_without_writing
           ai/tests/test_emlis_premium_context.py
           ai/tests/test_emlis_active_meaning_application.py
           ai/tests/test_emlis_analysis_material.py

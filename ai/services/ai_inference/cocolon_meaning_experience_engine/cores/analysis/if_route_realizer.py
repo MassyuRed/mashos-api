@@ -749,12 +749,17 @@ _IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS = _IF_MODEL_INSTRUCTION_CONDITIONAL +
 本人のCONSTRAINTはすべての案に共通です。各案のrequired_conditionsに一件ずつ置き、本人の文の全文をtextへ、対応するfield番号一つをsource_refsへ入れます。条件の追記・言い換え・結合はしません。予測できない反応や案ごとに仮に確認する条件は別の行に置き、本人のCONSTRAINTの番号を付けません。'''
 
 
-def _conditional_branch_context(projection, anchors):
+_IF_MODEL_INSTRUCTION_NEXT_STEP = _IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS + '''
+各案に、最初の行動を置いたあと、その場で確かめる具体的な条件をnext_conditionに一件書きます。本人の制約を書き換えず、next_conditionのsource_refsは空配列にします。本当かどうか分からない条件は、確かめる項目として書きます。
+nextには、その条件が当てはまった場合に初めて取れる、最初の行動とは違う具体的な一手を書きます。choiceからnextへつながる線にnext_conditionを付けます。最後のunknownでは、条件が成り立たない場合の未確定な点、または実際の結果や相手の反応で分からない点を、その案に即して述べます。各案の時間や手間など想定できる負担は具体的に説明し、分からない負担は推定せずunmodelled_factorsに置きます。'''
+
+
+def _conditional_branch_context(projection, anchors, *, include_scene_only=False):
     refs = {anchor['node_ref'] for anchor in anchors}
     structures = [dict(criterion=axis.get('criterion', axis['description']), description=axis['description'])
                   for axis in projection['overview'].get('primary_structures', ())
                   if refs.intersection(axis['node_refs'])]
-    if not structures:
+    if not structures and not (include_scene_only and projection['overview'].get('primary_structures')):
         return None
     return dict(primary_structures=structures, scenes=[
         dict(node_ref=node['node_ref'], summary=node['summary'], explanation=node['explanation'],
@@ -829,10 +834,16 @@ def prepare_if_model_request(request, *, response=None):
                             _IF_MODEL_INSTRUCTION_LEGACY)
         if branch_context is not None:
             instructions = (_IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS, _IF_MODEL_INSTRUCTION_CONDITIONAL, *instructions)
+        next_step_context = (_conditional_branch_context(projection, anchors, include_scene_only=True)
+                             if projection['wire_kind'] == 'watashi.map.v3' else None)
+        if next_step_context is not None:
+            instructions = (_IF_MODEL_INSTRUCTION_NEXT_STEP, *instructions)
         for instruction in instructions:
-            model_material = (dict(material, branch_context=branch_context)
-                              if instruction in (_IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS,
-                                                 _IF_MODEL_INSTRUCTION_CONDITIONAL) else material)
+            model_material = material
+            if instruction == _IF_MODEL_INSTRUCTION_NEXT_STEP:
+                model_material = dict(material, branch_context=next_step_context)
+            elif instruction in (_IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS, _IF_MODEL_INSTRUCTION_CONDITIONAL):
+                model_material = dict(material, branch_context=branch_context)
             messages = [dict(role='system', content=instruction), dict(role='user', content=_json(model_material))]
             request_ref = 'analysis-if-request:' + commitment([asdict(request), seed, messages])[7:]
             if response is None or (response.request_ref == request_ref
@@ -899,7 +910,8 @@ def _realize_model_set(prepared, response, packet):
     scenarios, graphs, shown = [], [], []
     ids, labels = set(), set()
     instruction = prepared.messages()[0]['content']
-    bind_constraints = instruction == _IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS
+    require_next_step = instruction == _IF_MODEL_INSTRUCTION_NEXT_STEP
+    bind_constraints = require_next_step or instruction == _IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS
     conditional = bind_constraints or instruction == _IF_MODEL_INSTRUCTION_CONDITIONAL
     explicit_constraints = {i: sources[i - 1]['text'] for i, ref in source_refs.items()
                             if bind_constraints and ref in seed['constraint_refs']}
@@ -912,7 +924,7 @@ def _realize_model_set(prepared, response, packet):
                  'analysis_if_model_packet_invalid')
         ids.add(proposal['scenario_id'])
         label = _model_surface(proposal['label'])
-        normal = re.sub(r'[\s。．.!！?？、,，]+', '', label)
+        normal = _comparison_text(label)
         _require(normal not in labels, 'analysis_if_duplicate_choices')
         labels.add(normal)
         for key in ('nodes', 'edges', 'required_conditions', 'frictions', 'unmodelled_factors'):
@@ -987,7 +999,8 @@ def _realize_model_set(prepared, response, packet):
             visible_edges.append(dict(edge_ref=edge['edge_id'], from_ref=edge['from'], to_ref=edge['to'],
                 visible_condition_labels=[by_condition[ref] for ref in edge['condition_refs']]))
         if conditional:
-            _check_conditional_scenario(proposal, anchors, source_refs, authored_choices)
+            _check_conditional_scenario(proposal, anchors, source_refs, authored_choices,
+                                        require_next_step=require_next_step)
         factors = [_model_surface(text) for text in proposal['unmodelled_factors']]
         frictions = [_model_surface(text) for text in proposal['frictions']]
         graph = dict(scenario_graph_id=graph_id, scenario_graph_version=1,
@@ -1027,7 +1040,11 @@ def _realize_model_set(prepared, response, packet):
                                  AnalysisIfArtifact(_json(payload)))
 
 
-def _check_conditional_scenario(proposal, anchors, source_refs, remaining_choices):
+def _comparison_text(text):
+    return re.sub(r'[\s。．.!！?？、,，]+', '', text)
+
+
+def _check_conditional_scenario(proposal, anchors, source_refs, remaining_choices, *, require_next_step=False):
     nodes = {node['node_id']: node for node in proposal['nodes']}
     starts = {node_id: node['anchor_ref'] for node_id, node in nodes.items()
               if node['origin'] == 'OBSERVED_ANCHOR'}
@@ -1050,9 +1067,18 @@ def _check_conditional_scenario(proposal, anchors, source_refs, remaining_choice
             _require(node_id == first and ref in remaining_choices and proposal['label'] == node['text'],
                      'analysis_if_model_choice_unbound')
             remaining_choices.remove(ref)
-    _require(nodes[first]['origin'] in {'USER_CHOICE', 'SIMULATED_EXTENSION'} and any(
-        edge['condition_refs'] and nodes[edge['to']]['origin'] == 'SIMULATED_EXTENSION'
-        for edge in outgoing[first]), 'analysis_if_conditional_route_incomplete')
+    next_steps = [edge for edge in outgoing[first]
+                  if edge['condition_refs'] and nodes[edge['to']]['origin'] == 'SIMULATED_EXTENSION']
+    _require(nodes[first]['origin'] in {'USER_CHOICE', 'SIMULATED_EXTENSION'} and next_steps,
+             'analysis_if_conditional_route_incomplete')
+    if require_next_step:
+        proposed_conditions = {condition['condition_id'] for condition in proposal['required_conditions']
+                               if not condition['source_refs']}
+        first_text = _comparison_text(nodes[first]['text'])
+        _require(any(proposed_conditions.intersection(edge['condition_refs'])
+                     and _comparison_text(nodes[edge['to']]['text']) != first_text
+                     and not nodes[edge['to']]['source_refs'] for edge in next_steps),
+                 'analysis_if_conditional_route_incomplete')
     reachable = set(starts)
     for node_id, node in nodes.items():
         _require(node_id in reachable and (node['origin'] == 'UNKNOWN' or outgoing[node_id]),

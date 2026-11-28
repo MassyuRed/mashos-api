@@ -294,15 +294,19 @@ def test_saved_reply_reopens_without_provider_or_meaning_generation(natural_case
 
 def test_current_writer_receives_factual_and_follow_guidance_with_same_source(natural_case):
     from cocolon_meaning_experience_engine.natural_reply import (
-        PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION, build_natural_reply_messages)
+        GROUNDED_RECIPIENT_VOICE_VERSION, PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION,
+        build_natural_reply_messages)
 
     user, parent, service, calls = natural_case
     initial = run(service.start(user, parent))
-    previous, current = [build_natural_reply_messages(replace(calls[0], recipient_voice_version=version))
-        for version in (PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION)]
-    assert previous[1] == current[1]
+    previous, grounded, current = [build_natural_reply_messages(replace(calls[0], recipient_voice_version=version))
+        for version in (PREVIOUS_RECIPIENT_VOICE_VERSION, GROUNDED_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION)]
+    assert previous[1] == grounded[1] == current[1]
     for guidance in ('伝聞にするのは', '因果を結ばない', '強度は言葉の温度', 'Emlisが本人に伝えたい言葉'):
         assert guidance not in previous[0]['content']
+        assert guidance in grounded[0]['content'] and guidance in current[0]['content']
+    for guidance in ('時を示す語は本人が結びつけた', '選択欄の感情は出来事と別に', '今聞いたEmlis'):
+        assert guidance not in grounded[0]['content']
         assert guidance in current[0]['content']
     assert run(service.get(user, parent)) == initial
     assert len(calls) == 1
@@ -356,7 +360,7 @@ def test_paid_recipient_voice_reuses_the_writer_and_saves_only_the_repaired_addr
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize('prior_voice', [None, 'emlis_recipient_voice.v1'])
+@pytest.mark.parametrize('prior_voice', [None, 'emlis_recipient_voice.v1', 'emlis_recipient_voice.v2'])
 def test_prechange_receipt_retries_with_original_prompt_and_reader_keeps_a_correctable_suffix(
         natural_case, qdb, monkeypatch, prior_voice):
     import cocolon_meaning_experience_engine.natural_reply as natural_reply
@@ -382,7 +386,7 @@ def test_prechange_receipt_retries_with_original_prompt_and_reader_keeps_a_corre
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
     with monkeypatch.context() as prechange:
         prechange.setattr(natural_reply, 'RECIPIENT_VOICE_VERSION', prior_voice)
-        prechange.setattr(natural_reply, '_RECIPIENT_VOICE_GROUNDING_MESSAGE', '')
+        prechange.setattr(natural_reply, '_RECIPIENT_FOCUS_MESSAGE', '')
         pending = run(service.start(user, parent))
     assert pending['can_retry']
     reopened = run(service.action(user, pending['thread_id'], action='retry_response',

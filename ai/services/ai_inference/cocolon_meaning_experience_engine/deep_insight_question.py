@@ -87,6 +87,12 @@ _RECORD_REASON_BODY = re.compile(
     r"(?:そうした|その)理由は(?:何|なん)(?:ですか|でしたか|でしょうか)"
 )
 _CITATION_JOIN = "」と書いていましたが、"
+_RECORD_UNBOUND_QUESTION = re.compile(
+    r"(?:(?:そのとき|その場面では|そういうとき|それについて))?"
+    r"(?:どんな(?:とき|時|場合|条件|場面|こと)|どういう(?:とき|場合|条件|こと)|"
+    r"どのような(?:とき|場合|条件|こと)|どう(?:でした|思い(?:ました|ます)))"
+    r"(?:です|でした|でしょう)?か\Z"
+)
 _CONDITION_QUESTION = re.compile(r"どんな(?:とき|時|場合|条件|場面)|どういう(?:とき|場合|条件)")
 _STATED_REASON = re.compile(r"(?:した|いた|った|だった|くて|なので|なくて)(?:ので|から)|だったため|するため|のため")
 _RECORD_SENTENCE = re.compile(r"[^。！？!?\n\r]+")
@@ -207,7 +213,7 @@ PLAN_SYSTEM_MESSAGE = f"""Emlisの「わたしを知る問い」で、本人に�
 quoteはそのキーのtextに一度だけ現れる連続した6〜70文字です。理由と行動をまとめず、確認する行動・判断・状態を含む箇所を選び、文末の「。」「！」「？」と空白は含めません。別人の意図・過去の事実を推定しません。
 テーマの入口では、選択したテーマ内で、自分の基準や捉え方が分かる一点を選びます。関連記録がなくても生成し、sourceとquoteは空文字です。
 conditionは対象を限定する既知の短い条件をそのまま書きます。記録では原文にある語だけを使います。限定がなければ空文字です。
-askは何を知りたいかの短い日本語で、表示する質問文ではありません。資料から確認点を作れなければ {{"decision":"skip"}} を返します。
+askは何を知りたいかの短い日本語で、表示する質問文ではありません。「そのときのこと」のような広い話題で終えず、本人が答える行動・条件・判断の対象を含めます。資料から確認点を作れなければ {{"decision":"skip"}} を返します。
 思考・行動欄の出来事の理由を選ぶときは、askを「引用した内容の理由」とし、記録の動作を別の動作に言い換えません。
 {_FOCUS_GUIDE}
 記録の出力例 {{"decision":"ask","focus":"REASON","source":"r1.thought","quote":"夕方までに道具を片づけた","condition":"","ask":"引用した内容の理由"}}
@@ -226,6 +232,7 @@ WRITE_SYSTEM_MESSAGE = f"""確認点askを、本人に丁寧に尋ねる自然�
 {_DATA_BOUNDARY}
 記録の入口では引用が質問の直前に表示されます。questionには引用を繰り返さず、引用後に続く質問だけを書きます。
 askにある確認対象を文面で明示します。「相手の反応」を確認するなら、どんな反応かを聞きます。「どんなときですか」だけに縮めません。conditionが空でなければその語を文面に残します。
+rewriteがあれば理由を読み、askに沿って、本人が何の条件・選択・判断について答えるかを質問の中で分かるように書き直します。
 引用と既知の条件のほかに出来事・時点・真意・原因・評価を前提として足しません。
 askが「引用した内容の理由」の場合は、quoteで示された内容に対して、動作や対象を言い換えず理由だけを尋ねます。「どんな理由からですか？」「そうしたのはなぜですか？」のように書き、他の動作を足しません。conditionがあれば「conditionのときに、そうしたのはなぜですか？」のように、実際の条件の語を先頭に置きます。
 テーマの入口では特定の人や本人の出来事を前提にせず、選択したテーマで本人が自由に答えられる形にします。
@@ -279,7 +286,7 @@ def _reading_system_message(*, answer):
 テーマ入口ではsourceとquoteを空にし、選択テーマと問いの観点が実際に一致するか確かめます。記録や過去の回答がゼロでも成立します。その人の過去の事実を前提にせず、テーマに沿った初めての基準を尋ねる場合はpremise_supportedとnew_informationをtrueにします。
 conditionは文面が明示した既知の短い限定条件をそのまま書き、限定がなければ空文字です。推測して補わないでください。
 premise_supportedは、引用外も含めて原文にない出来事・主体・時点・評価・原因を前提にせず、テーマにも合う時だけtrueにします。
-new_informationは、同じ場面について有効な回答・訂正・原文で既に答えた内容を言い換えて聞かず、既出・スキップと同じ観点ではなく、本人の判断が具体的に分かる時だけtrueにします。既知の理由と未確認の別条件は区別します。
+new_informationは、同じ場面について有効な回答・訂正・原文で既に答えた内容を言い換えて聞かず、既出・スキップと同じ観点ではなく、本人の判断が具体的に分かる時だけtrueにします。既知の理由と未確認の別条件は区別します。引用からも何の選択や条件を答えればよいか分からないときはunclearです。
 マップと過去の問い自体は本人の答えや事実ではありません。別人や別の時点の答えを本人の答えにせず、前提や重複を確かめられなければ拒否します。
 記録で「不安があっても説明会に行った」の理由を初めて聞く場合の採用例
 {{"verdict":"accept","focus":"REASON","source":"r1.thought","quote":"不安があっても説明会に行った","condition":"","premise_supported":true,"new_information":true}}。
@@ -1311,6 +1318,11 @@ def _without_repeated_introduction(body, scene, repeated_introductions):
             return body
 
 
+def _unbound_record_question(question, plan):
+    return bool(question and plan.anchor and plan.focus != "REASON"
+                and _RECORD_UNBOUND_QUESTION.fullmatch(_normal(question.partition(_CITATION_JOIN)[2])))
+
+
 async def generate_question(prepared, sources, *, material, generate):
     """Select a plan, write its surface separately, and read the final question afresh."""
     lane, theme = prepared["lane"], prepared["theme"]
@@ -1364,7 +1376,11 @@ async def generate_question(prepared, sources, *, material, generate):
         writer = _RECORD_ALTERNATIVE_WRITE_MESSAGE
         writing["alternatives"] = alternative["alternatives"]
     question = _accept_surface(await generate(writer, writing), plan=plan, theme=theme)
-    if question is None:
+    if _unbound_record_question(question, plan):
+        question = _accept_surface(await generate(writer, {
+            **writing, "rewrite": "引用の後の問いに尋ねる対象がありません。askにある対象を明示してください。",
+        }), plan=plan, theme=theme)
+    if question is None or _unbound_record_question(question, plan):
         return QuestionRun(None, "rejected", rejection_stage="writer")
 
     candidate = _candidate(question, plan=plan, lane=lane, material=material)

@@ -39,9 +39,9 @@ _WRITTEN_ACCOUNT_END = re.compile(
 # or arrival. Keep the whole clause as context without inferring a reason,
 # replacing the subject, or turning a selected emotion into a sentence.
 _WRITTEN_CALM_STATE = re.compile(
-    r'(?:[^。！？!?「」『』、，,\r\n]*(?:帰って|戻って|着いて)[、，,][ \t\u3000]*)?'
+    r'(?P<stem>(?:[^。！？!?「」『』、，,\r\n]*(?:帰って|戻って|着いて)[、，,][ \t\u3000]*)?'
     r'(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*)?'
-    r'(?:今は?[、，,]?[ \t\u3000]*)?落ち着いて(?:いる|います)[。！!]')
+    r'(?:今は?[、，,]?[ \t\u3000]*)?落ち着いて)(?:いる|います)(?P<stop>[。！!])')
 _WRITTEN_MOOD_STATE = re.compile(
     r'(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*)?'
     r'(?:(?:今日|今朝|今)は?[、，,]?[ \t\u3000]*)?(?:なんだか|何だか)?'
@@ -1081,7 +1081,7 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
     This function neither repairs a failed body nor invokes the finite author
     as a replacement. Exact candidate bytes become the canonical artifact.
     """
-    from piece_v2_content_policy import validate_piece_model_preservation
+    from piece_v2_content_policy import split_linked_original_action, validate_piece_model_preservation
     if type(body_blocks) is not tuple or not body_blocks or any(type(b) is not str for b in body_blocks):
         raise unavailable('piece_model_body_shape')
     text = '\n\n'.join(body_blocks)
@@ -1095,6 +1095,10 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
         if (type(meaning) is PieceRefinedMeaning
                 and type(meaning.source) in (PieceCorrectedSourceSnapshot, PieceDeepInsightSourceSnapshot)):
             source_formats = tuple(fmt for fmt in source_formats if fmt in plan.eligible_formats)
+        if realization_profile == MODEL_MEMO_SELECTION_PROFILE and len(blocks) == 2:
+            paragraph = ''.join(blocks)
+            if split_linked_original_action(meaning, paragraph) == blocks:
+                blocks = (paragraph,)
         text = '\n\n'.join(blocks)
         review = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                               'short_essay', ('short_essay',))

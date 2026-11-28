@@ -1087,7 +1087,7 @@ class EmlisThreadService:
             INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
             ISSUED_ANSWER_RECEPTION_VERSION,
             QWEN_9B_NATURAL_ALIAS,
-            PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION,
+            RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSIONS,
             PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION, UNSPECIFIED_CONCERN_CONTEXT_VERSION,
             build_natural_reply_messages, with_premium_reply_context)
@@ -1183,7 +1183,7 @@ class EmlisThreadService:
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
         voice_version = prior["payload"].get("recipient_voice_version") if prior else RECIPIENT_VOICE_VERSION
-        if voice_version not in (None, PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION):
+        if voice_version is not None and voice_version not in RECIPIENT_VOICE_VERSIONS:
             raise NaturalReplyError("natural_reply_writer_identity_changed")
         name_call = ""
         if voice_version:

@@ -127,18 +127,34 @@ def test_model_body_differs_from_old_author_and_remains_fixed_after_sql_save(sav
 
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
-def test_written_present_calm_state_is_kept_without_inventing_a_reason(saved_piece_db, monkeypatch, tier):
+@pytest.mark.parametrize('variant,lead_in,ending,accepted', [
+    ('', '帰って', 'いる', True),
+    ('-polite', '帰って', 'います', True),
+    ('-new-cause', '帰ったおかげで', 'います', False),
+    ('-negated', '帰って', 'いません', False),
+])
+def test_written_present_calm_state_is_kept_without_inventing_a_reason(
+        saved_piece_db, monkeypatch, tier, variant, lead_in, ending, accepted):
     from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+    from test_cmee_piece_request_saved_pipeline import _prepare_saved_request, _finish_saved_request
 
     memo = '短い散歩から帰って、今は落ち着いている。'
-    record = dict(id='written-present-calm',
+    body = f'短い散歩から{lead_in}、今は落ち着いて{ending}。'
+    record = dict(id='written-present-calm' + variant,
         created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
         memo=memo, memo_action='', category=['健康'], emotions=['平穏'],
         emotion_details=[dict(type='平穏', strength='medium')])
-    seen = _provider(monkeypatch, record['id'], [memo],
+    seen = _provider(monkeypatch, record['id'], [body],
         realization_profile=MODEL_MEMO_SELECTION_PROFILE, qwen9b=True)
-    result = _run_saved_request(saved_piece_db, monkeypatch, record, tier=tier)
-    assert result['detail']['piece_text'] == memo
+    state = _prepare_saved_request(saved_piece_db, monkeypatch, record, tier=tier, receive_questions=False)
+    if not accepted:
+        with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            _finish_saved_request(saved_piece_db, monkeypatch, state)
+        assert len(seen) == 1
+        return
+    result = _finish_saved_request(saved_piece_db, monkeypatch, state,
+        visual_selection=dict(theme_id='quiet_night', aspect_ratio=None, branding_mode=None))
+    assert result['detail']['piece_text'] == body
     assert result['source_unchanged'] and result['emlis_unchanged']
     assert result['quota_consumptions'] == 1
     _evidence(record['id'] + '-' + tier, result, seen)
@@ -216,6 +232,38 @@ def test_ordinary_piece_can_use_a_record_with_only_action(saved_piece_db, monkey
     result = _run_saved_request(saved_piece_db, monkeypatch, record, tier='free')
     assert result['detail']['piece_text'] == action
     assert list(seen[0]['prepared']['control']['field_slots']) == ['memo_action_0']
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('keep_link', [True, False])
+def test_ordinary_piece_keeps_an_explicit_action_connection_in_one_paragraph(
+        saved_piece_db, monkeypatch, tier, keep_link):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+    from test_cmee_piece_request_saved_pipeline import _prepare_saved_request, _finish_saved_request
+
+    memo = '提出を守りたいが同僚も手伝いたい。提出までに作業を終えられないと分かったので、今日は資料だけ確認すると決めた。'
+    action = 'だから、連絡は断って三ページを確認した。'
+    record = dict(id='linked-thought-and-action' if keep_link else 'linked-thought-and-action-changed',
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
+        memo=memo, memo_action=action, category=['仕事'], emotions=['平穏'],
+        emotion_details=[dict(type='平穏', strength='medium')])
+    model_action = action if keep_link else action.removeprefix('だから、')
+    seen = _provider(monkeypatch, record['id'], [memo, model_action],
+        realization_profile=MODEL_MEMO_SELECTION_PROFILE, qwen9b=True)
+    state = _prepare_saved_request(saved_piece_db, monkeypatch, record, tier=tier, receive_questions=False)
+    if not keep_link:
+        with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            _finish_saved_request(saved_piece_db, monkeypatch, state)
+        assert len(seen) == 1
+        return
+    result = _finish_saved_request(saved_piece_db, monkeypatch, state,
+        visual_selection=dict(theme_id='quiet_night', aspect_ratio=None, branding_mode=None))
+    assert list(seen[0]['prepared']['control']['field_slots']) == ['memo_0', 'memo_action_1']
+    assert result['detail']['content_payload']['body_blocks'] == [memo + action]
+    assert result['detail']['piece_text'] == memo + action
+    assert result['source_unchanged'] and result['emlis_unchanged']
+    assert result['quota_consumptions'] == 1
+    _evidence(record['id'] + '-' + tier, result, seen)
 
 
 @pytest.mark.parametrize('case_id,answer', [('Q2-A', '私は寂しかった。'), ('Q2-C', '今は、私は嬉しい。')])

@@ -404,8 +404,10 @@ def semantic_free_text_tokens(prefix, batch, sent, blocked, invalid_json_tokens=
 
 def _if_output_schema(material):
     """Constrain only the versioned IF protocol; the IF owner admits meaning."""
-    if (set(material) != {'model_schema', 'base_map_kind', 'branch_point_ref', 'anchors',
-            'fields', 'requested_candidate_count', 'constraints_confirmed'}
+    material_keys = {'model_schema', 'base_map_kind', 'branch_point_ref', 'anchors',
+                     'fields', 'requested_candidate_count', 'constraints_confirmed'}
+    conditional = 'branch_context' in material
+    if (set(material) != (material_keys | {'branch_context'} if conditional else material_keys)
             or material['model_schema'] != IF_CANDIDATE_SCHEMA
             or material['base_map_kind'] != 'DERIVED_AI_MAP_ANCHOR'
             or type(material['branch_point_ref']) is not str or not material['branch_point_ref']
@@ -423,6 +425,18 @@ def _if_output_schema(material):
         anchors.append(anchor['node_ref'])
     if len(set(anchors)) != len(anchors):
         raise ValueError('if_material_invalid')
+    if conditional:
+        context = material['branch_context']
+        if (type(context) is not dict or set(context) != {'primary_structures', 'scenes'}
+                or type(context['primary_structures']) is not list or type(context['scenes']) is not list
+                or any(type(axis) is not dict or set(axis) != {'criterion', 'description'}
+                       or any(type(value) is not str or not value for value in axis.values())
+                       for axis in context['primary_structures'])
+                or any(type(scene) is not dict or set(scene) !=
+                       {'node_ref', 'summary', 'explanation', 'context', 'unknowns'}
+                       or type(scene['node_ref']) is not str for scene in context['scenes'])
+                or sorted(scene['node_ref'] for scene in context['scenes']) != sorted(anchors)):
+            raise ValueError('if_material_invalid')
     fields = []
     for index, field in enumerate(material['fields'], 1):
         if (type(field) is not dict or set(field) != {'field', 'source_role', 'purpose', 'text'}
@@ -479,18 +493,18 @@ def _if_output_schema(material):
     scenario = obj(dict(scenario_id=text(100), label=label, nodes=array(node, 1, 24),
         edges=array(edge, 1, 48), required_conditions=array(condition, maximum=12),
         frictions=array(text(), maximum=12), unmodelled_factors=array(text(), 1, 12)))
-    # Keep authored conditions visible in every candidate. Additional uncertain
-    # requirements remain model-authored UNKNOWN/frictions/factors, never a
-    # silently omitted or reworded person constraint.
+    # Keep authored conditions visible in every candidate.
     constraints = [field for field in material['fields'] if field['purpose'] == 'CONSTRAINT']
     def object_tuple(items):
         return dict(type='array', prefixItems=items, items=False,
             minItems=len(items), maxItems=len(items))
-    if constraints:
-        scenario['properties']['required_conditions'] = object_tuple([
-            obj(dict(condition_id=quoted('constraint_' + str(i)), text=quoted(field['text']),
-                source_refs=array(dict(type='integer', enum=[field['field']]), 1, 1)))
-            for i, field in enumerate(constraints, 1)])
+    conditions = [obj(dict(condition_id=quoted('constraint_' + str(i)), text=quoted(field['text']),
+                      source_refs=array(dict(type='integer', enum=[field['field']]), 1, 1)))
+                  for i, field in enumerate(constraints, 1)]
+    if conditional:
+        conditions.append(obj(dict(condition_id=quoted('next_condition'), text=text(), source_refs=empty)))
+    if conditions:
+        scenario['properties']['required_conditions'] = object_tuple(conditions)
 
     def fixed_node(node_id, kind, origin, body, anchor, sources, reasons):
         value = node_variant(origin, body, anchor, sources, reasons)
@@ -501,15 +515,24 @@ def _if_output_schema(material):
         'OBSERVED_ANCHOR', quoted(anchor['visible_label']), quoted(anchor['node_ref']),
         empty, array(text(200), maximum=0))
         for i, anchor in enumerate(material['anchors'], 1)]
-    def fixed_edge(edge_id, start, end):
+    def fixed_edge(edge_id, start, end, conditions=None):
         return obj({'edge_id': quoted(edge_id), 'from': quoted(start), 'to': quoted(end),
-            'condition_refs': array(text(100), maximum=12)})
+            'condition_refs': array(text(100), maximum=12) if conditions is None else conditions})
 
     edges = [fixed_edge('anchor_' + str(i) + '_to_choice', 'anchor_' + str(i), 'choice')
         for i in range(1, len(anchor_nodes) + 1)]
-    edges.append(fixed_edge('choice_to_unknown', 'choice', 'unknown'))
     unknown = fixed_node('unknown', 'UNKNOWN_AFTERMATH', 'UNKNOWN', text(),
         dict(type='null'), empty, array(text(200), 1))
+    followup = [unknown]
+    if conditional:
+        followup.insert(0, fixed_node('next', 'POSSIBLE_CHOICE', 'SIMULATED_EXTENSION',
+            text(), dict(type='null'), empty, array(text(200), maximum=0)))
+        edges.extend((
+            fixed_edge('choice_to_next', 'choice', 'next', array(quoted('next_condition'), 1, 1)),
+            fixed_edge('next_to_unknown', 'next', 'unknown', array(text(100), maximum=0)),
+        ))
+    else:
+        edges.append(fixed_edge('choice_to_unknown', 'choice', 'unknown'))
     if alternatives:
         # Complete person-authored options retain their exact source slots.
         scenarios = []
@@ -518,7 +541,7 @@ def _if_output_schema(material):
                 quoted(field['text']), dict(type='null'),
                 array(dict(type='integer', enum=[field['field']]), 1, 1), array(text(200), maximum=0))
             properties = dict(scenario['properties'], label=quoted(field['text']),
-                nodes=object_tuple(anchor_nodes + [choice, unknown]), edges=object_tuple(edges))
+                nodes=object_tuple(anchor_nodes + [choice] + followup), edges=object_tuple(edges))
             scenarios.append(obj(properties))
         scenario = dict(oneOf=scenarios)
     else:
@@ -531,7 +554,7 @@ def _if_output_schema(material):
             for field in choice_fields]
         choices.append(fixed_node('choice', 'POSSIBLE_CHOICE', 'SIMULATED_EXTENSION',
             text(), dict(type='null'), refs, array(text(200), maximum=0)))
-        scenario['properties'].update(nodes=object_tuple(anchor_nodes + [dict(oneOf=choices), unknown]),
+        scenario['properties'].update(nodes=object_tuple(anchor_nodes + [dict(oneOf=choices)] + followup),
             edges=object_tuple(edges))
     clarification = obj(dict(reason_code=dict(type='string', enum=[
         'BRANCH_INTENT_UNCLEAR', 'CONSTRAINT_UNCLEAR', 'ALTERNATIVES_UNCLEAR']), prompt=text(300)))

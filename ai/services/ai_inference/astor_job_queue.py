@@ -54,6 +54,21 @@ MAP_JOB_TYPES = frozenset({'myprofile_latest_refresh_v1', 'analyze_self_structur
                            'analyze_self_structure_deep_v1'})
 
 
+class AstorQueueTemporarilyUnavailable(RuntimeError):
+    """PostgREST could not load its schema cache or acquire a pooled connection."""
+
+
+def _raise_on_postgrest_unavailable(response: httpx.Response) -> None:
+    if response.status_code not in (503, 504):
+        return
+    try:
+        error = response.json()
+    except ValueError:
+        return
+    if isinstance(error, dict) and error.get('code') in ('PGRST002', 'PGRST003'):
+        raise AstorQueueTemporarilyUnavailable(error['code'])
+
+
 def _now_iso_z() -> str:
     return (
         datetime.now(timezone.utc)
@@ -305,6 +320,7 @@ async def fetch_next_queued_job(
 
     resp = await sb_get(f"/rest/v1/{JOBS_TABLE}", params=params, timeout=6.0)
     if resp.status_code not in (200, 206):
+        _raise_on_postgrest_unavailable(resp)
         logger.error("fetch_next_queued_job failed: %s %s", resp.status_code, (resp.text or "")[:500])
         return None
     try:
@@ -357,6 +373,7 @@ async def claim_job(
         f"/rest/v1/{JOBS_TABLE}", json=patch, params=params,
         prefer="return=representation", timeout=8.0)
     if resp.status_code not in (200, 204):
+        _raise_on_postgrest_unavailable(resp)
         logger.error("claim_job failed: %s %s", resp.status_code, (resp.text or "")[:500])
         return None
     if resp.status_code == 204:

@@ -6,18 +6,20 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
 import analysis_cumulative_service as cumulative
 import analysis_model_source as model_sources
 import analysis_plan_source_choices as choices
 import analysis_semantic_map as semantic
+import api_deep_insight as deep_insight
 from cocolon_meaning_experience_engine.cores.analysis import semantic_admission as admission
 from cocolon_meaning_experience_engine.cores.analysis.source_adapter import DEEP_INSIGHT_ANSWER_ROLE
 from test_analysis_cumulative import OWNER, source_snapshot
 from test_analysis_cumulative_model_source import sql_source
 from test_analysis_interpretation_correction_sources import sql_script
+from test_analysis_primary_structures import FIRST, SECOND, v3_reading
 from test_analysis_node_local_native_profile import accepts, probe
-from test_analysis_v24_progress_transport import successful_response
 from test_emlis_natural_reply_application import natural_case
 from test_emlis_q2_application import answer, run
 from test_emlis_q3_application import qdb
@@ -109,9 +111,11 @@ def _received_answer_plan(prepared, material, fields, selected, value):
             admission.admit_semantic_node_local_v4_plan_response(prepared, dict(value, nodes=invalid))
 
 
-def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_guide=None, meaning_by_source=None):
+def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_guide=None,
+                 meaning_by_source=None, structures=None):
     received_prepared = None
     received_plan = received_nodes = received_plan_raw = None
+    model = model_sources.SEMANTIC_OCCURRENCE_V24_9B_MODEL if structures else 'test-model'
 
     def handler(request):
         nonlocal received_plan, received_nodes, received_plan_raw
@@ -231,6 +235,8 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
                 overview['title'] = '書き残した判断と行動'
             value.update(nodes_sha256=schema['nodes_sha256']['enum'][0],
                 qualification_review={}, edges=[], overview=overview)
+            if structures is not None:
+                value['primary_structures'] = structures(registry)
             if received_prepared is not None:
                 assert overview['title'] == '2件の記録を振り返って'
                 wrong_title = '発表後に褒められた経験と本音'
@@ -245,10 +251,12 @@ def v24_provider(calls, *, received_case=False, plan_packet=None, scoped_node_gu
         raw = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
         if received_prepared is not None and phase == 'PLAN':
             received_plan_raw = raw
-        return successful_response(raw)
+        return httpx.Response(200, json=dict(model=model, usage=dict(completion_tokens=20),
+            choices=[dict(finish_reason='stop', message=dict(role='assistant', content=raw))]))
 
     provider = model_sources.SelfHostedSemanticAnalysisModelSource(endpoint='https://synthetic-analysis.invalid/chat/completions',
-        model='test-model', api_key='synthetic-test', semantic_prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
+        model=model,
+        api_key='synthetic-test', semantic_prompt_version=admission.SEMANTIC_MAP_OCCURRENCE_V24_PROFILE,
         transport=httpx.MockTransport(handler))
     if received_case:
         complete = provider._node_local_v4
@@ -347,6 +355,70 @@ def test_answer_updates_normal_v24_map_through_provider_and_database(sql_source,
     assert not run(cumulative.read_maps(OTHER, report_id=report))['items']
     assert 'code' not in db.query('delete from public.deep_insight_questions where id=$1', [QUESTION_ID])
     assert not run(cumulative.read_maps(OWNER, report_id=report, history=True))['items']
+
+
+@pytest.mark.parametrize('lane', ['theme', 'records'])
+def test_answer_changes_same_owners_saved_primary_structure_text_and_graph(sql_source, monkeypatch, lane):
+    """Exercise answer HTTP, saved source, actual map admission and persisted public graph."""
+    pytest.importorskip('lmformatenforcer')
+    db, rpc = sql_source
+    for name in (*RECEIVED_MAP_MIGRATIONS[3:], '20261121134000_deep_insight_grounded_questions.sql',
+                 '20261121194000_deep_insight_question_by_id.sql',
+                 '20261128053620_deep_insight_answer_refresh.sql'):
+        sql_script(db, name)
+    assert 'code' not in db.query('insert into auth.users values ($1)', [OWNER])
+    assert 'code' not in db.query("insert into public.profiles values ($1,'premium')", [OWNER])
+    original = source_snapshot(1)['members'][0]['original']
+    assert 'code' not in db.query('insert into public.emotions values ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [original['id'], OWNER, original['created_at'], FIRST, '', original['category'],
+         original['emotions'], json.dumps(original['emotion_details'])])
+    prompt = '手伝いを頼まれた場面では、引き受けるかどうかをどう決めましたか？'
+    assert 'code' not in db.query('''insert into public.deep_insight_questions
+        (id,user_id,lane,theme,question_text,issued_on,question_key,text_key)
+        values ($1,$2,$3,$4,$5,(now() at time zone 'Asia/Tokyo')::date,'question-key','text-key')''',
+        [QUESTION_ID, OWNER, lane, '人間関係' if lane == 'theme' else None, prompt])
+
+    monkeypatch.setenv('COCOLON_ANALYSIS_PRIMARY_STRUCTURE_READING', 'karen.v3')
+    monkeypatch.delenv('COCOLON_ANALYSIS_PLAN_READ_ROLLOUT', raising=False)
+    monkeypatch.delenv('ASTOR_WORKER_QUEUE_ENABLED', raising=False)
+    monkeypatch.setattr(deep_insight, '_rpc', rpc)
+    app = FastAPI()
+    deep_insight.register_deep_insight_routes(app)
+    app.dependency_overrides[deep_insight._owner] = lambda: OWNER
+
+    async def save_answer():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            response = await client.post('/deep-insight/answers', json=dict(question_id=QUESTION_ID, answer_text=SECOND))
+            assert response.status_code == 200, response.text
+            reread = await client.get(f'/deep-insight/questions/{QUESTION_ID}')
+            assert reread.status_code == 200, reread.text
+            assert response.json()['question'] == reread.json()
+            assert reread.json()['id'] == QUESTION_ID and reread.json()['answer_text'] == SECOND
+
+    prior_axis = dict(anchors=['n1.u1.e1'], scope='in_this_record', decision_factor='自分で選んだ仕事',
+        criterion='自分で選んだ仕事だったことが、この場面で引き受けた理由です。',
+        case_reading='会議では、自分で選んだ仕事だったため、引き受けました。',
+        heading='会議で仕事を引き受けた場面')
+    later_axis = v3_reading()
+    calls = []
+    provider = v24_provider(calls, structures=lambda nodes: [later_axis if len(nodes) == 2 else prior_axis])
+    before = run(cumulative.ensure_map(OWNER, model_source=provider))
+    assert before['report_id'] and before['meta']['overview']['primary_structures'][0]['node_refs'] == ['n1']
+    run(save_answer())
+    after = run(cumulative.ensure_map(OWNER, model_source=provider))
+    assert after['report_id'] and after['report_id'] != before['report_id']
+    for phase, packet in calls[3:]:
+        assert any(record.get('deep_insight_question') == prompt for record in packet['records']), phase
+    saved, = run(cumulative.read_maps(OWNER, report_id=after['report_id']))['items']
+    graph = saved['content_json']['watashiMap']
+    axis, = graph['overview']['primary_structures']
+    assert axis['node_refs'] == ['n1', 'n2'] and axis['title'] == later_axis['heading']
+    assert saved['id'] == after['report_id']
+    assert later_axis['case_reading'] in saved['content_text'] and later_axis['case_reading'] in after['content_text']
+    assert later_axis['case_reading'] in axis['description'] and later_axis['case_reading'] not in before['content_text']
+    evidence, = run(cumulative.map_evidence(OWNER, saved['id'], axis['node_refs'][-1]))['items']
+    assert evidence['id'] == QUESTION_ID
+    assert evidence['deep_insight'] == dict(question_text=prompt, answer_text=SECOND)
 
 
 def test_free_received_meaning_and_deep_insight_keep_original_fields_and_saved_evidence(natural_case, received_map_db, monkeypatch):
