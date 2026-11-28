@@ -21,6 +21,7 @@ from cocolon_meaning_experience_engine.deep_insight_question import (
 )
 from emlis_thread_config import MAX_ANSWER_CHARS, natural_reply_provider_settings
 from generation_lock import build_lock_key, release_lock, try_acquire_lock
+from piece_v2_runtime_control import piece_feature_flags_for_app
 from response_microcache import get_or_compute
 from supabase_client import sb_post_rpc
 
@@ -30,6 +31,7 @@ Lane = Literal["records", "theme"]
 QuestionStatus = Literal["issued", "existing", "no_question", "daily_limit"]
 _GENERATION_BUDGET_SECONDS = 96
 _NO_MERIT_CACHE_SECONDS = 15 * 60
+_ANSWER_PIECE_LOOKUP_SECONDS = 1.5
 
 
 class Question(BaseModel):
@@ -107,7 +109,7 @@ class AnswerCommand(BaseModel):
 
 
 class AnswerResult(BaseModel):
-    question: Question
+    question: HistoryQuestion
 
 
 class ThemeNotification(BaseModel):
@@ -358,37 +360,40 @@ async def assess_deep_insight_records(owner, source_guard):
     return outcome.disposition
 
 
+async def _attach_piece_source_inputs(owner: str, questions: list[HistoryQuestion]) -> None:
+    from piece_v2_source_adapter import eligible_deep_insight_history_source
+
+    answered_records = [question for question in questions if question.lane == "records"
+                        and question.answer_text is not None and question.answered_at is not None]
+    if not answered_records:
+        return
+    try:
+        links = await _rpc("deep_insight_piece_history_links", {
+            "p_owner": owner, "p_question_ids": [str(question.id) for question in answered_records],
+        })
+    except HTTPException:
+        return
+    for question in answered_records:
+        try:
+            input_id = UUID(eligible_deep_insight_history_source(
+                owner, str(question.id), question.answer_text, question.answered_at.isoformat(),
+                links.get(str(question.id)),
+            ))
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if input_id.int != 0:
+            question.piece_source_input_id = input_id
+
+
 def register_deep_insight_routes(app: FastAPI) -> None:
     router = APIRouter(prefix="/deep-insight")
 
     @router.get("", response_model=DeepInsightState)
     async def read_deep_insight(response: Response, request: Request, owner: str = Depends(_owner)):
-        from piece_v2_runtime_control import piece_feature_flags_for_app
-        from piece_v2_source_adapter import eligible_deep_insight_history_source
-
         response.headers["Cache-Control"] = "no-store"
         state = _stored(_StoredState, await _rpc("deep_insight_state", {"p_user_id": owner}))
-        answered_records = [question for question in state.history if question.lane == "records"
-                            and question.answer_text is not None and question.answered_at is not None]
-        if (state.can_use_records and answered_records
-                and piece_feature_flags_for_app(request.app)["piece_v2_preview_enabled"]):
-            try:
-                links = await _rpc("deep_insight_piece_history_links", {
-                    "p_owner": owner, "p_question_ids": [str(question.id) for question in answered_records],
-                })
-            except HTTPException:
-                # Keep the ordinary DeepInsight history readable without the optional Piece selector.
-                return state
-            for question in answered_records:
-                try:
-                    input_id = UUID(eligible_deep_insight_history_source(
-                        owner, str(question.id), question.answer_text, question.answered_at.isoformat(),
-                        links.get(str(question.id)),
-                    ))
-                except (ValueError, TypeError, AttributeError):
-                    continue
-                if input_id.int != 0:
-                    question.piece_source_input_id = input_id
+        if state.can_use_records and piece_feature_flags_for_app(request.app)["piece_v2_preview_enabled"]:
+            await _attach_piece_source_inputs(owner, state.history)
         return state
 
     @router.get("/questions/{question_id}", response_model=Question)
@@ -424,13 +429,22 @@ def register_deep_insight_routes(app: FastAPI) -> None:
         return outcome.result
 
     @router.post("/answers", response_model=AnswerResult)
-    async def answer_deep_insight_question(command: AnswerCommand, response: Response, owner: str = Depends(_owner)):
+    async def answer_deep_insight_question(command: AnswerCommand, request: Request, response: Response,
+                                            owner: str = Depends(_owner)):
         from analysis_cumulative_service import _map_refresh_queue_enabled
 
         response.headers["Cache-Control"] = "no-store"
-        return _stored(_StoredAnswer, await _rpc("deep_insight_answer_and_refresh", {
+        saved = _stored(_StoredAnswer, await _rpc("deep_insight_answer_and_refresh", {
             "p_user_id": owner, "p_question_id": str(command.question_id), "p_answer_text": command.answer_text,
             "p_enqueue_map": _map_refresh_queue_enabled(),
         }))
+        if piece_feature_flags_for_app(request.app)["piece_v2_preview_enabled"]:
+            try:
+                async with asyncio.timeout(_ANSWER_PIECE_LOOKUP_SECONDS):
+                    await _attach_piece_source_inputs(owner, [saved.question])
+            except TimeoutError:
+                # The answer and map refresh were already saved.
+                pass
+        return saved
 
     app.include_router(router)

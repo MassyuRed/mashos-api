@@ -362,6 +362,62 @@ def test_issue_and_exact_answer_pass_verified_owner_to_the_store(api_harness):
     })
 
 
+@pytest.mark.parametrize("path", ["eligible", "unavailable", "timeout", "missing", "theme", "preview-disabled"])
+def test_saved_answer_immediately_offers_only_an_eligible_piece_source(api_harness, monkeypatch, path):
+    import piece_v2_source_adapter
+
+    client, _, calls, _, _ = api_harness
+    enabled = path != "preview-disabled"
+    client.app.state.piece_v2_runtime = {
+        setting: {"piece_v2_preview_enabled": enabled} for setting in ("requested", "ready")
+    }
+    saved_rpc = api.sb_post_rpc
+    original = {"id": RECORD["id"]}
+
+    async def rpc(name, payload, *, timeout):
+        if name == "deep_insight_answer_and_refresh":
+            response = await saved_rpc(name, payload, timeout=timeout)
+            if path == "theme":
+                result = response.json()
+                result["question"].update(lane="theme", theme="仕事・学び")
+                return httpx.Response(200, json=result)
+            return response
+        assert name == "deep_insight_piece_history_links"
+        assert payload == {"p_owner": OWNER, "p_question_ids": [QUESTION]}
+        calls.append((name, payload))
+        if path == "unavailable":
+            return httpx.Response(503, json={})
+        if path == "timeout":
+            await asyncio.sleep(1)
+        return httpx.Response(200, json={QUESTION: original} if path == "eligible" else {})
+
+    def eligible(owner, question_id, answer, answered_at, source):
+        assert (owner, question_id, answer) == (OWNER, QUESTION, "本人の回答")
+        assert answered_at == "2026-11-21T10:00:00+00:00"
+        if source is None:
+            raise ValueError("No eligible record")
+        assert source == original
+        return source["id"]
+
+    if path == "timeout":
+        monkeypatch.setattr(api, "_ANSWER_PIECE_LOOKUP_SECONDS", 0.01)
+    monkeypatch.setattr(api, "sb_post_rpc", rpc)
+    monkeypatch.setattr(piece_v2_source_adapter, "eligible_deep_insight_history_source", eligible)
+    response = client.post("/deep-insight/answers", headers=AUTH,
+                           json={"question_id": QUESTION, "answer_text": "本人の回答"})
+    assert response.status_code == 200, response.text
+    assert "inserted" not in response.json()
+    question = response.json()["question"]
+    assert question["answer_text"] == "本人の回答"
+    if path == "eligible":
+        assert question["piece_source_input_id"] == RECORD["id"]
+    else:
+        assert "piece_source_input_id" not in question
+    assert [name for name, _ in calls] == ["deep_insight_answer_and_refresh"] + (
+        ["deep_insight_piece_history_links"] if path in {"eligible", "unavailable", "timeout", "missing"} else []
+    )
+
+
 def test_no_merit_is_reused_for_same_material_but_rechecked_after_edit(api_harness):
     client, _, calls, answers, context = api_harness
     context["guard"] = "no-merit-1"
