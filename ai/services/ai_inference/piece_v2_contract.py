@@ -6,9 +6,11 @@ import copy
 import hashlib
 import json
 import math
+import re
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
+from uuid import UUID
 
 
 class PieceContractError(ValueError):
@@ -18,6 +20,27 @@ class PieceContractError(ValueError):
         self.code = str(code or "PIECE_REQUEST_INVALID").strip() or "PIECE_REQUEST_INVALID"
         self.detail = str(detail or "").strip() or None
         super().__init__(self.code if self.detail is None else f"{self.code}:{self.detail}")
+
+
+DEEP_INSIGHT_PIECE_SOURCE_KIND = "deep_insight_record_answer"
+DEEP_INSIGHT_PIECE_SOURCE_VERSION = "piece.deep_insight_answer.v1"
+_DEEP_INSIGHT_PIECE_REF_FIELDS = {
+    "source_kind", "source_input_id", "deep_insight_question_id", "source_commitment"
+}
+
+
+def validate_deep_insight_piece_ref(value: object) -> None:
+    try:
+        if (type(value) is not dict or set(value) != _DEEP_INSIGHT_PIECE_REF_FIELDS
+                or value["source_kind"] != DEEP_INSIGHT_PIECE_SOURCE_KIND
+                or not re.fullmatch("sha256:[0-9a-f]{64}", value["source_commitment"])):
+            raise ValueError
+        for field in ("source_input_id", "deep_insight_question_id"):
+            identity = UUID(value[field])
+            if identity.int == 0 or str(identity) != value[field]:
+                raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise PieceContractError("PIECE_REQUEST_INVALID") from None
 
 
 PIECE_V2_CONTRACT_VERSIONS = MappingProxyType(

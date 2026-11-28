@@ -20,7 +20,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from api_piece_v2 import _authenticated_owner, _response, _OperationFeatures
-from piece_v2_contract import PieceContractError
+from piece_v2_contract import (
+    DEEP_INSIGHT_PIECE_SOURCE_KIND, PieceContractError, validate_deep_insight_piece_ref,
+)
 
 source_ref_router = APIRouter(prefix='/emotion/piece')
 _SOURCE_REF_FIELDS = frozenset({
@@ -81,7 +83,8 @@ async def read_original_source_ref(saved_input_id: str, request: Request) -> JSO
         await _authenticated_owner(request)
         features.require()
         query = list(request.query_params.multi_items())
-        if (query and (len(query) != 1 or query[0][0] != 'supplemental_answer_identity')) or await request.body():
+        if (query and (len(query) != 1 or query[0][0] not in {
+                'supplemental_answer_identity', 'deep_insight_question_id'})) or await request.body():
             raise PieceContractError('PIECE_REQUEST_INVALID')
         selected_answer = query[0][1] if query else None
         try:
@@ -97,6 +100,24 @@ async def read_original_source_ref(saved_input_id: str, request: Request) -> JSO
         features.require()
         from piece_v2_source_adapter import PieceSavedSourceAdapter
         adapter = PieceSavedSourceAdapter()
+        if query and query[0][0] == 'deep_insight_question_id':
+            from cocolon_meaning_experience_engine.piece_deep_insight import validate_deep_insight_piece_source
+            from piece_v2_source_adapter import project_saved_deep_insight_source
+            handoff = await features.wrap(adapter.resolve_deep_insight_handoff)(
+                request.headers['authorization'], saved_input_id, question_id=selected_answer)
+            try:
+                validate_deep_insight_piece_source(project_saved_deep_insight_source(handoff))
+            except ValueError:
+                raise PieceContractError('PIECE_SOURCE_NOT_ELIGIBLE') from None
+            result = {
+                'source_kind': DEEP_INSIGHT_PIECE_SOURCE_KIND,
+                'source_input_id': saved_input_id,
+                'deep_insight_question_id': selected_answer,
+                'source_commitment': handoff.source_commitment,
+            }
+            validate_deep_insight_piece_ref(result)
+            features.require()
+            return _response(result)
         if selected_answer is None:
             result = await features.wrap(adapter.resolve_original_source_ref)(
                 request.headers['authorization'], saved_input_id)

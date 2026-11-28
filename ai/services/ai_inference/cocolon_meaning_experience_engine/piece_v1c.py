@@ -1091,8 +1091,9 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
     if realization_profile in MODEL_REALIZATION_PROFILES:
         blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, body_blocks)
         from .piece_refined import PieceRefinedMeaning, PieceCorrectedSourceSnapshot
+        from .piece_deep_insight import PieceDeepInsightSourceSnapshot
         if (type(meaning) is PieceRefinedMeaning
-                and type(meaning.source) is PieceCorrectedSourceSnapshot):
+                and type(meaning.source) in (PieceCorrectedSourceSnapshot, PieceDeepInsightSourceSnapshot)):
             source_formats = tuple(fmt for fmt in source_formats if fmt in plan.eligible_formats)
         text = '\n\n'.join(blocks)
         review = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
@@ -1390,6 +1391,9 @@ def generate_piece_artifact(request: PieceGenerationRequest) -> PieceEngineOutco
             or not isinstance(request.request_id, str) or not request.request_id.strip()):
         return PieceEngineOutcome(EngineStatus.REJECTED, ('piece_request_out_of_scope',))
     from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, generate_refined_piece
+    from .piece_deep_insight import PieceDeepInsightSourceSnapshot
+    if type(request.source) is PieceDeepInsightSourceSnapshot:
+        return PieceEngineOutcome(EngineStatus.UNAVAILABLE, ('piece_deep_insight_model_required',))
     if type(request.source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot):
         return generate_refined_piece(request)
     meaning = None

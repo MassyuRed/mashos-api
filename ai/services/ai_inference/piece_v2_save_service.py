@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 
 from piece_v2_content_policy import choose_format
 from piece_v2_contract import PieceContractError, canonical_json_bytes
-from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_refined_fence
+from piece_v2_source_adapter import PieceSavedSourceAdapter
 from piece_v2_preview_service import (
-    _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage,
+    _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage, _expected_source_state,
 )
 from piece_v2_store import _preview_content, save_piece, save_request_arguments
 from piece_v2_visual import (EXPANDED_PALETTE_RENDERERS, build_selected_visual_recipe,
@@ -171,10 +171,7 @@ class PieceSaveService:
                 _fail('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
             return await save_piece(authenticated_user_id=owner, request=value,
                 idempotency_key=idempotency_key, rpc=self._rpc, expected_subscription_tier=tier,
-                expected_source_state={'original': current.original.original_payload(),
-                    'thread_id': current.thread_id, 'thread_revision': current.thread_revision,
-                    'lineage': _canonical_handoff_lineage(current),
-                    **project_saved_refined_fence(current)})
+                expected_source_state=_expected_source_state(current, lineage))
         except PieceContractError as exc:
             _fail(exc.code if exc.code in SAVE_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE')
         except Exception:

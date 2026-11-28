@@ -25,7 +25,7 @@ from piece_v2_contract import (
     PIECE_V2_CONTRACT_VERSIONS, PieceContractError, canonical_sha256_hex,
     validate_piece_text_binding,
 )
-from piece_v2_preview_service import PreparedPiecePreview, _HANDOFF_TYPES, _project_handoff_source
+from piece_v2_preview_service import PreparedPiecePreview, _HANDOFF_TYPES, _model_source_request, _project_handoff_source
 from piece_v2_source_adapter import PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff
 from cocolon_meaning_experience_engine.piece_source import build_piece_source_meaning
 from cocolon_meaning_experience_engine.piece_v1c import (
@@ -144,6 +144,18 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
         payload, artifact = _artifact(prepared)
         handoff = prepared.handoff
         source = _project_handoff_source(handoff)
+        from piece_v2_source_adapter import PieceSavedDeepInsightHandoff
+        if type(handoff) is PieceSavedDeepInsightHandoff:
+            from cocolon_meaning_experience_engine.piece_semantic_admission import piece_model_source_plan
+
+            if any(_scan(text) for text in (source.original.original_text, source.answer_text, artifact.piece_text)):
+                return 'blocked'
+            if artifact.format_type != 'short_essay' or artifact.eligible_formats != ('short_essay',):
+                _reject()
+            meaning, plan = piece_model_source_plan(_model_source_request(handoff, {'requested_format': None}))
+            validate_piece_model_preservation(meaning, plan, artifact)
+            return 'transformed' if ((meaning.original is not None and meaning.original.role_bindings)
+                or (meaning.supplemental is not None and meaning.supplemental.role_bindings)) else 'ready'
         if type(handoff) in (PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff):
             from cocolon_meaning_experience_engine.piece_refined import (
                 build_refined_meaning, _plans, validate_refined_preservation,

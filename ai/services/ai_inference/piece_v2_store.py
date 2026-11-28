@@ -15,7 +15,9 @@ import re
 from typing import Any
 from uuid import UUID
 
-from piece_v2_contract import PieceContractError, normalize_visibility_scope
+from piece_v2_contract import (
+    DEEP_INSIGHT_PIECE_SOURCE_KIND, PieceContractError, canonical_json_bytes, normalize_visibility_scope,
+)
 
 RpcCall = Callable[[str, Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
 _ERRORS = frozenset({
@@ -63,6 +65,40 @@ def _request(value: Any, required: set[str], optional: set[str] | None = None) -
     if not required <= keys or keys - required - (optional or set()):
         raise PieceContractError('PIECE_REQUEST_INVALID')
     return dict(value)
+
+
+def _source_state(value: Mapping[str, Any], owner: str, tier: str | None) -> dict:
+    import json
+
+    if not isinstance(value, Mapping) or tier not in ('free', 'plus', 'premium'):
+        raise ValueError
+    lineage = value.get('lineage')
+    deep_insight = isinstance(lineage, Mapping) and lineage.get('source_kind') == DEEP_INSIGHT_PIECE_SOURCE_KIND
+    if deep_insight:
+        if tier != 'premium':
+            raise ValueError
+        required, optional = {'original', 'lineage'}, set()
+    else:
+        required = {'original', 'thread_id', 'thread_revision', 'lineage'}
+        optional = {'meaning_checkpoint', 'meaning_checkpoints', 'interpretation_correction'}
+    source = json.loads(canonical_json_bytes(_request(value, required, optional)))
+    if (type(source['original']) is not dict or type(source['lineage']) is not dict
+            or source['lineage']['source_input']['source_owner_user_id'] != owner
+            or source['original']['id'] != source['lineage']['source_input']['source_input_id']):
+        raise ValueError
+    if not deep_insight:
+        source['thread_id'] = _uuid(source['thread_id'])
+        _positive(source['thread_revision'])
+        if ('meaning_checkpoint' in source and type(source['meaning_checkpoint']) is not dict
+                or 'interpretation_correction' in source and (
+                    type(source['interpretation_correction']) is not dict
+                    or 'meaning_checkpoint' in source or 'meaning_checkpoints' in source)
+                or 'meaning_checkpoints' in source and (
+                    'meaning_checkpoint' in source or type(source['meaning_checkpoints']) is not list
+                    or len(source['meaning_checkpoints']) not in (2, 3)
+                    or any(type(cp) is not dict for cp in source['meaning_checkpoints']))):
+            raise ValueError
+    return source
 
 
 async def _execute(rpc: RpcCall, name: str, args: dict, fields: set[str]) -> dict:
@@ -147,27 +183,8 @@ async def save_piece(*, authenticated_user_id: str, request: Mapping[str, Any],
     if replay_only:
         args['p_replay_only'] = True
     if expected_source_state is not None:
-        import json
-        from piece_v2_contract import canonical_json_bytes
         try:
-            value = json.loads(canonical_json_bytes(_request(expected_source_state,
-                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint', 'meaning_checkpoints', 'interpretation_correction'})))
-            value['thread_id'] = _uuid(value['thread_id'])
-            _positive(value['thread_revision'])
-            if (expected_subscription_tier is None or type(value['original']) is not dict
-                    or type(value['lineage']) is not dict
-                    or ('meaning_checkpoint' in value and type(value['meaning_checkpoint']) is not dict)
-                    or ('interpretation_correction' in value and (
-                        type(value['interpretation_correction']) is not dict
-                        or 'meaning_checkpoint' in value or 'meaning_checkpoints' in value))
-                    or ('meaning_checkpoints' in value and (
-                        'meaning_checkpoint' in value
-                        or type(value['meaning_checkpoints']) is not list
-                        or len(value['meaning_checkpoints']) not in (2, 3)
-                        or any(type(cp) is not dict for cp in value['meaning_checkpoints'])))
-                    or value['lineage']['source_input']['source_owner_user_id'] != args['p_owner_user_id']
-                    or value['original']['id'] != value['lineage']['source_input']['source_input_id']):
-                raise ValueError
+            value = _source_state(expected_source_state, args['p_owner_user_id'], expected_subscription_tier)
         except (PieceContractError, KeyError, ValueError, TypeError, UnicodeError, RecursionError):
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
         args['p_expected_source_state'] = value
@@ -277,26 +294,8 @@ async def issue_piece_preview(*, authenticated_user_id: str, record: Mapping[str
     }
     if expected_subscription_tier is not None or expected_source_state is not None:
         try:
-            if (type(expected_subscription_tier) is not str
-                    or expected_subscription_tier not in ('free', 'plus', 'premium')):
-                raise ValueError
-            expected = json.loads(canonical_json_bytes(_request(expected_source_state,
-                {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint', 'meaning_checkpoints', 'interpretation_correction'})))
-            expected['thread_id'] = _uuid(expected['thread_id'])
-            _positive(expected['thread_revision'])
-            if (type(expected['original']) is not dict or type(expected['lineage']) is not dict
-                    or ('meaning_checkpoint' in expected and type(expected['meaning_checkpoint']) is not dict)
-                    or ('interpretation_correction' in expected and (
-                        type(expected['interpretation_correction']) is not dict
-                        or 'meaning_checkpoint' in expected or 'meaning_checkpoints' in expected))
-                    or ('meaning_checkpoints' in expected and (
-                        'meaning_checkpoint' in expected
-                        or type(expected['meaning_checkpoints']) is not list
-                        or len(expected['meaning_checkpoints']) not in (2, 3)
-                        or any(type(cp) is not dict for cp in expected['meaning_checkpoints'])))
-                    or expected['lineage']['source_input']['source_owner_user_id'] != owner
-                    or expected['original']['id'] != expected['lineage']['source_input']['source_input_id']
-                    or canonical_json_bytes(expected['lineage']) != canonical_json_bytes(value['source_lineage'])):
+            expected = _source_state(expected_source_state, owner, expected_subscription_tier)
+            if canonical_json_bytes(expected['lineage']) != canonical_json_bytes(value['source_lineage']):
                 raise ValueError
         except (PieceContractError, KeyError, TypeError, ValueError, OverflowError, RecursionError):
             raise PieceContractError('PIECE_REQUEST_INVALID') from None
@@ -372,30 +371,16 @@ async def mutate_piece_preview_visual(*, authenticated_user_id: str, preview_id:
     revision = _positive(expected_preview_revision)
     try:
         row = json.loads(canonical_json_bytes(_request(expected_record, set(_REPLAY_COLUMNS))))
-        source = json.loads(canonical_json_bytes(_request(expected_source_state,
-            {'original', 'thread_id', 'thread_revision', 'lineage'}, {'meaning_checkpoint', 'meaning_checkpoints', 'interpretation_correction'})))
+        source = _source_state(expected_source_state, owner, expected_subscription_tier)
         recipe = json.loads(canonical_json_bytes(visual_recipe))
         if (UUID(owner).int == 0 or UUID(pid).int == 0
                 or row['id'] != pid or row['owner_user_id'] != owner
                 or row['piece_contract_version'] != 'piece.record.v2'
                 or row['lifecycle_status'] != 'preview_draft' or row['visibility_scope'] != 'private'
                 or _positive(row['preview_revision']) != revision
-                or expected_subscription_tier not in ('free', 'plus', 'premium')
-                or ('meaning_checkpoint' in source and type(source['meaning_checkpoint']) is not dict)
-                    or ('interpretation_correction' in source and (
-                        type(source['interpretation_correction']) is not dict
-                        or 'meaning_checkpoint' in source or 'meaning_checkpoints' in source))
-                    or ('meaning_checkpoints' in source and (
-                        'meaning_checkpoint' in source
-                        or type(source['meaning_checkpoints']) is not list
-                        or len(source['meaning_checkpoints']) not in (2, 3)
-                        or any(type(cp) is not dict for cp in source['meaning_checkpoints'])))
-                or source['lineage'] != row['source_lineage']
-                or source['lineage']['source_input']['source_owner_user_id'] != owner
-                or source['original']['id'] != source['lineage']['source_input']['source_input_id']):
+                or source['lineage'] != row['source_lineage']):
             raise ValueError
         _positive(row['row_version']); _hash(row['preview_request_hash'])
-        _uuid(source['thread_id']); _positive(source['thread_revision'])
         old = {k: row[k] for k in _PREVIEW_CONTENT_FIELDS - {'eligible_formats'}}
         old['eligible_formats'] = row['preview_eligible_formats']
         _preview_content(old)

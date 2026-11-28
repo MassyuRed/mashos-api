@@ -23,12 +23,13 @@ from time import perf_counter
 
 from emlis_ai_current_input_bundle import EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION
 from piece_v2_contract import (
-    PIECE_V2_CONTRACT_VERSIONS, PieceContractError, canonical_json_bytes,
-    canonical_sha256_hex, validate_piece_text_binding,
+    DEEP_INSIGHT_PIECE_SOURCE_KIND, PIECE_V2_CONTRACT_VERSIONS, PieceContractError,
+    canonical_json_bytes, canonical_sha256_hex, validate_deep_insight_piece_ref, validate_piece_text_binding,
 )
 from piece_v2_generation import generate_piece_candidate
 from piece_v2_source_adapter import (
-    PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff, PieceSavedSourceAdapter,
+    PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff, PieceSavedDeepInsightHandoff,
+    PieceSavedSourceAdapter, project_saved_deep_insight_source,
     project_saved_original_source, project_saved_refined_source,
     project_saved_refined_lineage, project_saved_refined_fence,
     project_saved_corrected_source,
@@ -59,7 +60,8 @@ _SERVICE_ERRORS = frozenset({
     'PIECE_VISUAL_SELECTION_NOT_ALLOWED', 'PIECE_SAFETY_UNAVAILABLE',
     'PIECE_HASH_MISMATCH', 'PIECE_CONFLICT', 'PIECE_TEMPORARILY_UNAVAILABLE',
 })
-_HANDOFF_TYPES = (PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff)
+_HANDOFF_TYPES = (PieceSavedHandoff, PieceSavedRefinedHandoff, PieceSavedCorrectedHandoff,
+                  PieceSavedDeepInsightHandoff)
 _APPLICATION_MODEL = object()
 # Request-private acquisition only. Entries disappear when the last waiter
 # exits; this is neither a persisted preview reservation nor a result cache.
@@ -137,7 +139,14 @@ def _error(code: str) -> PieceContractError:
 
 
 def _source_ref_from_lineage(lineage: dict) -> dict:
-    """The same closed seven references for either selected source stage."""
+    """Project only the external references for the lineage's source kind."""
+    if lineage.get('source_kind') == DEEP_INSIGHT_PIECE_SOURCE_KIND:
+        return {
+            'source_kind': DEEP_INSIGHT_PIECE_SOURCE_KIND,
+            'source_input_id': lineage['source_input']['source_input_id'],
+            'deep_insight_question_id': lineage['deep_insight']['deep_insight_question_id'],
+            'source_commitment': lineage['deep_insight']['source_commitment'],
+        }
     result = {key: lineage['source_input'][key] for key in (
         'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
     result.update({key: lineage['observation'][key] for key in (
@@ -152,12 +161,14 @@ def _canonical_handoff_lineage(handoff) -> dict:
         return handoff.lineage_payload()
     if type(handoff) is PieceSavedRefinedHandoff:
         return project_saved_refined_lineage(handoff, opted_in=True)
-    if type(handoff) is PieceSavedHandoff:
+    if type(handoff) in (PieceSavedHandoff, PieceSavedDeepInsightHandoff):
         return handoff.lineage_payload()
     raise _error('PIECE_REQUEST_INVALID')
 
 
 def _project_handoff_source(handoff):
+    if type(handoff) is PieceSavedDeepInsightHandoff:
+        return project_saved_deep_insight_source(handoff)
     if type(handoff) is PieceSavedCorrectedHandoff:
         return project_saved_corrected_source(handoff)
     if type(handoff) is PieceSavedRefinedHandoff:
@@ -170,7 +181,12 @@ def _project_handoff_source(handoff):
 
 async def _resolve_handoff(adapter, authorization, source_ref):
     """Only an explicitly selected answer enters the refined source owner."""
-    if source_ref['emlis_observation_stage'] == 'corrected_observation':
+    if source_ref.get('source_kind') == DEEP_INSIGHT_PIECE_SOURCE_KIND:
+        validate_deep_insight_piece_ref(source_ref)
+        handoff = await adapter.resolve_deep_insight_handoff(authorization, source_ref['source_input_id'],
+            question_id=source_ref['deep_insight_question_id'])
+        expected_type = PieceSavedDeepInsightHandoff
+    elif source_ref['emlis_observation_stage'] == 'corrected_observation':
         if (source_ref.get('question_need_decision_identity') is None) != (source_ref.get('supplemental_answer_identity') is None):
             raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
         if source_ref.get('supplemental_answer_identity') is None:
@@ -197,6 +213,8 @@ async def _resolve_handoff(adapter, authorization, source_ref):
 
 
 async def _revalidate_handoff(adapter, authorization, handoff):
+    if type(handoff) is PieceSavedDeepInsightHandoff:
+        return await adapter.revalidate_deep_insight_handoff(authorization, handoff)
     if type(handoff) is PieceSavedCorrectedHandoff:
         return await adapter.revalidate_corrected_handoff(authorization, handoff)
     if type(handoff) is PieceSavedRefinedHandoff:
@@ -204,6 +222,14 @@ async def _revalidate_handoff(adapter, authorization, handoff):
     if type(handoff) is PieceSavedHandoff:
         return await adapter.revalidate_original_handoff(authorization, handoff)
     raise _error('PIECE_REQUEST_INVALID')
+
+
+def _expected_source_state(handoff, lineage: dict) -> dict:
+    fence = {'original': handoff.original.original_payload(), 'lineage': lineage}
+    if type(handoff) is PieceSavedDeepInsightHandoff:
+        return fence
+    return dict(fence, thread_id=handoff.thread_id, thread_revision=handoff.thread_revision,
+        **project_saved_refined_fence(handoff))
 
 
 def _validate_visual_selection(value: object) -> None:
@@ -221,28 +247,33 @@ def _request_snapshot(request: object) -> dict:
             raise _error('PIECE_REQUEST_INVALID')
         value = json.loads(canonical_json_bytes(request))
         source, visual = value['source_ref'], value['visual_selection']
-        if type(source) is not dict or set(source) != _SOURCE_FIELDS:
-            raise _error('PIECE_REQUEST_INVALID')
         _validate_visual_selection(visual)
-        for key in ('source_input_id', 'source_input_version',
-                    'source_input_bundle_commitment', 'emlis_observation_stage',
-                    'emlis_observation_result_identity'):
-            if type(source[key]) is not str or not source[key].strip():
-                raise _error('PIECE_REQUEST_INVALID')
-        if not _COMMITMENT.fullmatch(source['source_input_bundle_commitment']):
+        if type(source) is not dict:
             raise _error('PIECE_REQUEST_INVALID')
-        for key in ('question_need_decision_identity', 'supplemental_answer_identity'):
-            if source[key] is not None and (type(source[key]) is not str or not source[key].strip()):
+        if source.get('source_kind') == DEEP_INSIGHT_PIECE_SOURCE_KIND:
+            validate_deep_insight_piece_ref(source)
+        else:
+            if set(source) != _SOURCE_FIELDS:
                 raise _error('PIECE_REQUEST_INVALID')
-        stage = source['emlis_observation_stage']
-        if (source['source_input_version'] != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION or not (
-                stage in ('normal_observation', 'pre_question_observation')
-                and source['supplemental_answer_identity'] is None
-                or stage == 'corrected_observation' and
-                    (source['supplemental_answer_identity'] is None)==(source['question_need_decision_identity'] is None)
-                or stage == 'refined_observation' and source['supplemental_answer_identity'] is not None
-                and source['question_need_decision_identity'] is not None)):
-            raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
+            for key in ('source_input_id', 'source_input_version',
+                        'source_input_bundle_commitment', 'emlis_observation_stage',
+                        'emlis_observation_result_identity'):
+                if type(source[key]) is not str or not source[key].strip():
+                    raise _error('PIECE_REQUEST_INVALID')
+            if not _COMMITMENT.fullmatch(source['source_input_bundle_commitment']):
+                raise _error('PIECE_REQUEST_INVALID')
+            for key in ('question_need_decision_identity', 'supplemental_answer_identity'):
+                if source[key] is not None and (type(source[key]) is not str or not source[key].strip()):
+                    raise _error('PIECE_REQUEST_INVALID')
+            stage = source['emlis_observation_stage']
+            if (source['source_input_version'] != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION or not (
+                    stage in ('normal_observation', 'pre_question_observation')
+                    and source['supplemental_answer_identity'] is None
+                    or stage == 'corrected_observation' and
+                        (source['supplemental_answer_identity'] is None)==(source['question_need_decision_identity'] is None)
+                    or stage == 'refined_observation' and source['supplemental_answer_identity'] is not None
+                    and source['question_need_decision_identity'] is not None)):
+                raise _error('PIECE_SOURCE_NOT_ELIGIBLE')
         chosen = value['requested_format']
         if chosen is not None and (type(chosen) is not str or chosen not in ('short_essay', 'quote', 'declaration')):
             raise _error('PIECE_FORMAT_NOT_ELIGIBLE')
@@ -317,7 +348,7 @@ class PreparedPiecePreview:
     owner. artifact_payload returns a copy containing neither source identity
     nor raw source fields. This object asserts no native layout or safety PASS.
     """
-    handoff: PieceSavedHandoff | PieceSavedRefinedHandoff | PieceSavedCorrectedHandoff = field(repr=False)
+    handoff: PieceSavedHandoff | PieceSavedRefinedHandoff | PieceSavedCorrectedHandoff | PieceSavedDeepInsightHandoff = field(repr=False)
     _artifact_json: bytes = field(repr=False)
 
     def artifact_payload(self) -> dict:
@@ -352,11 +383,7 @@ class PiecePreviewService:
         try:
             handoff = await _resolve_handoff(self._source_adapter, authorization, source_ref)
             lineage = _canonical_handoff_lineage(handoff)
-            expected = {key: lineage['source_input'][key] for key in (
-                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
-            expected.update({key: lineage['observation'][key] for key in (
-                'emlis_observation_stage', 'emlis_observation_result_identity',
-                'question_need_decision_identity', 'supplemental_answer_identity')})
+            expected = _source_ref_from_lineage(lineage)
             if source_ref != expected:
                 raise _error('PIECE_CONFLICT')
             if _model_input is _APPLICATION_MODEL:
@@ -600,10 +627,7 @@ class PiecePreviewService:
                 expected_record=row, visual_recipe=new_artifact['visual_recipe'],
                 visual_recipe_hash=new_artifact['visual_recipe_hash'],
                 expected_subscription_tier=expected_subscription_tier,
-                expected_source_state={'original': handoff.original.original_payload(),
-                    'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
-                    'lineage': _canonical_handoff_lineage(handoff),
-                    **project_saved_refined_fence(handoff)}, rpc=rpc)
+                expected_source_state=_expected_source_state(handoff, row['source_lineage']), rpc=rpc)
         except PieceContractError as exc:
             raise _error(exc.code if exc.code in errors else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
         except Exception:
@@ -661,11 +685,7 @@ class PiecePreviewService:
                 raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
             handoff = previous.handoff
             lineage = _canonical_handoff_lineage(handoff)
-            expected = {key: lineage['source_input'][key] for key in (
-                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
-            expected.update({key: lineage['observation'][key] for key in (
-                'emlis_observation_stage', 'emlis_observation_result_identity',
-                'question_need_decision_identity', 'supplemental_answer_identity')})
+            expected = _source_ref_from_lineage(lineage)
             if value['source_ref'] != expected:
                 raise _error('PIECE_CONFLICT')
             # Hold a detached copy; neither the request nor a reviewer's copy
@@ -725,9 +745,7 @@ class PiecePreviewService:
                 record=record, request_fingerprint=canonical_sha256_hex(value),
                 idempotency_key=idempotency_key, ttl_seconds=ttl_seconds, rpc=rpc,
                 expected_subscription_tier=handoff.original.subscription_tier,
-                expected_source_state={'original': handoff.original.original_payload(),
-                    'thread_id': handoff.thread_id, 'thread_revision': handoff.thread_revision,
-                    'lineage': lineage, **project_saved_refined_fence(handoff)})
+                expected_source_state=_expected_source_state(handoff, lineage))
             if allowed_renderers is not None and result['renderer_version'] not in allowed_renderers:
                 raise _error('PIECE_REQUEST_INVALID')
             return result
@@ -787,11 +805,7 @@ class PiecePreviewService:
             if UUID(owner).int == 0:
                 raise _error('PIECE_AUTH_REQUIRED')
             lineage = _canonical_handoff_lineage(handoff)
-            expected = {k: lineage['source_input'][k] for k in (
-                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
-            expected.update({k: lineage['observation'][k] for k in (
-                'emlis_observation_stage', 'emlis_observation_result_identity',
-                'question_need_decision_identity', 'supplemental_answer_identity')})
+            expected = _source_ref_from_lineage(lineage)
             if value['source_ref'] != expected:
                 raise _error('PIECE_CONFLICT')
             preview_id = str(UUID(hashlib.sha256(
@@ -930,11 +944,7 @@ class PiecePreviewService:
             if UUID(owner).int == 0:
                 raise _error('PIECE_AUTH_REQUIRED')
             lineage = _canonical_handoff_lineage(handoff)
-            expected = {k: lineage['source_input'][k] for k in (
-                'source_input_id', 'source_input_version', 'source_input_bundle_commitment')}
-            expected.update({k: lineage['observation'][k] for k in (
-                'emlis_observation_stage', 'emlis_observation_result_identity',
-                'question_need_decision_identity', 'supplemental_answer_identity')})
+            expected = _source_ref_from_lineage(lineage)
             if value['source_ref'] != expected:
                 raise _error('PIECE_CONFLICT')
             preview_id = str(UUID(hashlib.sha256(

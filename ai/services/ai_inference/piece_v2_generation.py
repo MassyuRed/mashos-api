@@ -285,10 +285,14 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
         PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, build_refined_meaning, _plans,
         realize_refined_piece_artifact, validate_refined_preservation,
     )
+    from cocolon_meaning_experience_engine.piece_deep_insight import PieceDeepInsightSourceSnapshot
     refined = type(source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot)
-    if type(source) is not PieceSourceSnapshot and not refined:
+    deep_insight = type(source) is PieceDeepInsightSourceSnapshot
+    if type(source) is not PieceSourceSnapshot and not (refined or deep_insight):
         raise unavailable('source_type')
-    original = source.original if refined else source
+    if deep_insight and model_candidate is None:
+        raise unavailable('piece_deep_insight_model_required')
+    original = source.original if refined or deep_insight else source
     if type(original) is not PieceSourceSnapshot:
         raise unavailable('source_type')
     request = PieceGenerationRequest(

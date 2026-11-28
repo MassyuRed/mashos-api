@@ -675,6 +675,7 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
         relative_feeling_anchor_blocks,
     )
     from piece_v2_contract import validate_piece_text_binding
+    from cocolon_meaning_experience_engine.piece_deep_insight import PieceDeepInsightSourceSnapshot
     if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
             or artifact.eligible_formats != ('short_essay',)):
         raise unavailable('piece_model_artifact_binding')
@@ -686,15 +687,16 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
                 or plan.source_roles != refined_source_roles(meaning.source)
                 or plan.eligible_formats != ('short_essay',)):
             raise unavailable('piece_model_source_binding')
-        if type(meaning.source) is PieceCorrectedSourceSnapshot:
-            # Every child must belong to this corrected composite, not merely
+        if type(meaning.source) in (PieceCorrectedSourceSnapshot, PieceDeepInsightSourceSnapshot):
+            # Every child must belong to this composite, not merely
             # validate against some other individually legitimate snapshot.
-            from cocolon_meaning_experience_engine.piece_refined import build_refined_meaning
+            from cocolon_meaning_experience_engine.piece_refined import build_refined_meaning, _plans
             from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
             original = meaning.source.original
-            expected = build_refined_meaning(PieceGenerationRequest('piece-corrected-review',
+            expected = build_refined_meaning(PieceGenerationRequest('piece-composite-review',
                 meaning.source, original.owner_id, original.saved_input_id, original.source_version))
-            if meaning != expected:
+            if meaning != expected or (type(meaning.source) is PieceDeepInsightSourceSnapshot
+                    and plan != _plans(expected)):
                 raise unavailable('piece_model_source_binding')
         parts = refined_meaning_parts(meaning, plan)
     else:
@@ -793,7 +795,9 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
     from cocolon_meaning_experience_engine.piece_refined import (
         PieceSupplementalMeaning, PieceCorrectionMeaning, PieceActiveOriginalMeaning, supplemental_complete_self_account,
         supplemental_statement_view)
-    if (type(meaning) not in (PieceSourceMeaning, PieceSupplementalMeaning, PieceCorrectionMeaning, PieceActiveOriginalMeaning) or type(plan) is not PieceArtifactPlan
+    from cocolon_meaning_experience_engine.piece_deep_insight import PieceDeepInsightAnswerMeaning
+    if (type(meaning) not in (PieceSourceMeaning, PieceSupplementalMeaning, PieceCorrectionMeaning,
+            PieceActiveOriginalMeaning, PieceDeepInsightAnswerMeaning) or type(plan) is not PieceArtifactPlan
             or type(artifact) is not PieceArtifact):
         reject()
     validate_piece_saved_fields(meaning)

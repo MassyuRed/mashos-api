@@ -15,6 +15,7 @@ A frozen object is not ongoing access; later operations revalidate current state
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import hmac
 import json
 import re
@@ -31,7 +32,10 @@ from emlis_ai_current_input_bundle import (
 )
 from emlis_ai_nls_v3_artifact_contract import artifact_sha256
 from emlis_thread_store import EmlisThreadStore, ThreadStoreError
-from piece_v2_contract import PieceContractError, canonical_json_bytes, canonical_sha256_hex
+from piece_v2_contract import (
+    DEEP_INSIGHT_PIECE_SOURCE_KIND, DEEP_INSIGHT_PIECE_SOURCE_VERSION,
+    PieceContractError, canonical_json_bytes, canonical_sha256_hex,
+)
 from publish_governance import parse_iso_utc, timestamp_in_history_retention
 
 if TYPE_CHECKING:
@@ -137,6 +141,37 @@ class PieceSavedCorrectedHandoff:
         return json.loads(self._lineage_json)
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class PieceSavedDeepInsightHandoff:
+    original: PieceSavedOriginal
+    question_id: str
+    source_commitment: str
+    answer_text: str = field(repr=False)
+    answered_at: str
+
+    def lineage_payload(self) -> dict:
+        saved = self.original
+        return {
+            'handoff_contract_version': 'cocolon.cross_core.source_handoff.v1',
+            'piece_source_lineage_version': 'piece.source_lineage.v1',
+            'source_kind': DEEP_INSIGHT_PIECE_SOURCE_KIND,
+            'source_input': {
+                'source_input_id': saved.saved_input_id,
+                'source_input_version': saved.source_input_version,
+                'source_input_bundle_commitment': saved.input_bundle_commitment,
+                'source_owner_user_id': saved.authenticated_owner_id,
+                'source_recorded_at': parse_iso_utc(saved.recorded_at).isoformat(),
+            },
+            'deep_insight': {
+                'deep_insight_question_id': self.question_id,
+                'source_version': DEEP_INSIGHT_PIECE_SOURCE_VERSION,
+                'source_commitment': self.source_commitment,
+            },
+            'semantic_source_roles': ['original_input', 'deep_insight_answer'],
+            'body_free': True,
+        }
+
+
 def _error(code: str) -> PieceContractError:
     # Never propagate token, RPC response, source bytes or arbitrary exceptions.
     return PieceContractError(code)
@@ -192,6 +227,59 @@ def _original(snapshot: object, input_id: str) -> tuple[dict, str]:
     return original, tier
 
 
+def _saved_original(owner: str, input_id: str, original: dict, tier: str) -> PieceSavedOriginal:
+    try:
+        raw = canonical_json_bytes(original)
+        # Match the Emlis saved-original adapter while retaining exact raw bytes.
+        bundle_source = json.loads(raw)
+        bundle_source['created_at'] = parse_iso_utc(original['created_at']).isoformat()
+        bundle = normalize_emlis_current_input(bundle_source)
+        return PieceSavedOriginal(
+            owner, input_id, EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION,
+            'sha256:' + artifact_sha256(bundle), 'sha256:' + canonical_sha256_hex(original),
+            original['created_at'], tier, raw, canonical_json_bytes(bundle),
+        )
+    except (ValueError, TypeError, UnicodeError):
+        raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+
+def piece_deep_insight_handoff_from_binding(owner: str, input_id: str, question_id: str,
+                                           binding: object) -> PieceSavedDeepInsightHandoff:
+    if binding is None:
+        raise _error('PIECE_SOURCE_NOT_FOUND')
+    if (type(binding) is not dict or set(binding) != {
+            'source_version', 'commitment', 'subscription_tier', 'original',
+            'answer_id', 'answer_text', 'answered_at', 'ai_question_context'}
+            or binding['source_version'] != DEEP_INSIGHT_PIECE_SOURCE_VERSION
+            or binding['subscription_tier'] != 'premium'
+            or binding['answer_id'] != question_id
+            or type(binding['commitment']) is not str or not _COMMITMENT.fullmatch(binding['commitment'])
+            or type(binding['answer_text']) is not str or not binding['answer_text'].strip()
+            or type(binding['answered_at']) is not str or parse_iso_utc(binding['answered_at']) is None):
+        raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+    original, tier = _original({
+        'original': binding['original'], 'tier': binding['subscription_tier'],
+        'now': datetime.now(timezone.utc).isoformat(),
+    }, input_id)
+    return PieceSavedDeepInsightHandoff(
+        _saved_original(owner, input_id, original, tier), question_id,
+        binding['commitment'], binding['answer_text'], binding['answered_at'],
+    )
+
+
+async def _verified_piece_owner(authorization: str | None) -> str:
+    if authorization is not None and type(authorization) is not str:
+        raise _error('PIECE_AUTH_REQUIRED')
+    try:
+        verified_owner = await _require_user_id(authorization)
+    except HTTPException as exc:
+        raise _error('PIECE_AUTH_REQUIRED' if exc.status_code in (401, 403)
+                     else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
+    except (httpx.TransportError, httpx.TimeoutException, ValueError, TypeError, AttributeError):
+        raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+    return _uuid(verified_owner, 'PIECE_AUTH_REQUIRED')
+
+
 class PieceSavedSourceAdapter:
     """Read-only binding to the current saved-original owner.
 
@@ -220,18 +308,7 @@ class PieceSavedSourceAdapter:
         expected_input_bundle_commitment: str | None = None,
         expected_record_commitment: str | None = None,
     ) -> tuple[PieceSavedOriginal, dict]:
-        if authorization is not None and type(authorization) is not str:
-            raise _error('PIECE_AUTH_REQUIRED')
-        try:
-            verified_owner = await _require_user_id(authorization)
-        except HTTPException as exc:
-            raise _error('PIECE_AUTH_REQUIRED' if exc.status_code in (401, 403)
-                         else 'PIECE_TEMPORARILY_UNAVAILABLE') from None
-        except (httpx.TransportError, httpx.TimeoutException):
-            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
-        except (ValueError, TypeError, AttributeError):
-            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
-        owner = _uuid(verified_owner, 'PIECE_AUTH_REQUIRED')
+        owner = await _verified_piece_owner(authorization)
         input_id = _uuid(saved_input_id, 'PIECE_REQUEST_INVALID')
         if (type(source_input_version) is not str or
                 source_input_version != EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION):
@@ -254,31 +331,42 @@ class PieceSavedSourceAdapter:
         if thread is not None and (type(thread) is not dict or
                 thread.get('user_id') != owner or thread.get('original_emotion_id') != input_id):
             raise _error('PIECE_SOURCE_NOT_FOUND')
-        try:
-            raw = canonical_json_bytes(original)
-            # Normalize only a private copy, and retain exact original bytes too.
-            bundle_source = json.loads(raw)
-            # Match emlis_thread_service._request's saved-original time adapter;
-            # the raw snapshot retains the database's exact representation.
-            bundle_source['created_at'] = parse_iso_utc(original['created_at']).isoformat()
-            bundle = normalize_emlis_current_input(bundle_source)
-            bundle_bytes = canonical_json_bytes(bundle)
-            raw_commitment = 'sha256:' + canonical_sha256_hex(original)
-            # The source-bundle owner uses NFC/LF canonicalization. A Piece
-            # artifact hash is not a substitute; exact edits remain covered
-            # independently by raw_commitment.
-            bundle_commitment = 'sha256:' + artifact_sha256(bundle)
-        except (ValueError, TypeError, UnicodeError):
-            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+        saved = _saved_original(owner, input_id, original, tier)
         if ((expected_record_commitment is not None and
-             not hmac.compare_digest(expected_record_commitment, raw_commitment)) or
+             not hmac.compare_digest(expected_record_commitment, saved.record_commitment)) or
             (expected_input_bundle_commitment is not None and
-             not hmac.compare_digest(expected_input_bundle_commitment, bundle_commitment))):
+             not hmac.compare_digest(expected_input_bundle_commitment, saved.input_bundle_commitment))):
             raise _error('PIECE_CONFLICT')
-        return PieceSavedOriginal(
-            owner, input_id, source_input_version, bundle_commitment, raw_commitment,
-            original['created_at'], tier, raw, bundle_bytes,
-        ), snapshot
+        return saved, snapshot
+
+    async def resolve_deep_insight_handoff(
+        self, authorization: str | None, saved_input_id: str, *, question_id: str,
+    ) -> PieceSavedDeepInsightHandoff:
+        from supabase_client import sb_post_rpc
+
+        owner = await _verified_piece_owner(authorization)
+        input_id = _uuid(saved_input_id, 'PIECE_REQUEST_INVALID')
+        selected = _uuid(question_id, 'PIECE_REQUEST_INVALID')
+        try:
+            response = await sb_post_rpc('piece_deep_insight_source_binding', {
+                'p_owner': owner, 'p_saved_input': input_id, 'p_question': selected,
+                'p_expected_commitment': None,
+            }, timeout=8.0)
+            if response.status_code != 200:
+                raise _error('PIECE_TEMPORARILY_UNAVAILABLE')
+            return piece_deep_insight_handoff_from_binding(owner, input_id, selected, response.json())
+        except PieceContractError:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError, RuntimeError):
+            raise _error('PIECE_TEMPORARILY_UNAVAILABLE') from None
+
+    async def revalidate_deep_insight_handoff(self, authorization: str | None,
+                                               previous: PieceSavedDeepInsightHandoff) -> PieceSavedDeepInsightHandoff:
+        current = await self.resolve_deep_insight_handoff(
+            authorization, previous.original.saved_input_id, question_id=previous.question_id)
+        if current != previous:
+            raise _error('PIECE_CONFLICT')
+        return current
 
     async def revalidate_original(
         self, authorization: str | None, previous: PieceSavedOriginal,
@@ -595,6 +683,35 @@ def project_saved_original_source(saved: PieceSavedOriginal, *, source_stage: st
         saved.source_input_version, '\n\n'.join(fields),
         source_role='original', source_stage=source_stage,
         saved_original_json=saved._original_json)
+
+
+def project_saved_deep_insight_source(handoff: PieceSavedDeepInsightHandoff):
+    from cocolon_meaning_experience_engine.piece_deep_insight import PieceDeepInsightSourceSnapshot
+
+    return PieceDeepInsightSourceSnapshot(
+        project_saved_original_source(handoff.original, source_stage='normal_observation'),
+        handoff.question_id, handoff.answer_text, handoff.answered_at, handoff.source_commitment,
+    )
+
+
+def eligible_deep_insight_history_source(owner: str, question_id: str, answer_text: str,
+                                         answered_at: str, raw: object) -> str:
+    from cocolon_meaning_experience_engine.piece_deep_insight import validate_deep_insight_piece_source
+
+    if type(raw) is not dict:
+        raise _error('PIECE_SOURCE_NOT_FOUND')
+    input_id = _uuid(raw.get('id'), 'PIECE_SOURCE_NOT_FOUND')
+    original, tier = _original({
+        'original': raw, 'tier': 'premium', 'now': datetime.now(timezone.utc).isoformat(),
+    }, input_id)
+    # The history selector only checks grammar for this snapshot. The Piece
+    # route obtains a separate locked source receipt before creating a draft.
+    material_hash = 'sha256:' + canonical_sha256_hex([original, question_id, answer_text, answered_at])
+    handoff = PieceSavedDeepInsightHandoff(
+        _saved_original(owner, input_id, original, tier), question_id, material_hash, answer_text, answered_at,
+    )
+    validate_deep_insight_piece_source(project_saved_deep_insight_source(handoff))
+    return input_id
 
 
 def _latest_natural_analysis_state(snapshot):
