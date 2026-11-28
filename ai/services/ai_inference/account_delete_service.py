@@ -669,6 +669,7 @@ async def execute_account_delete(user_id: str) -> AccountDeleteExecutionResult:
         await _invalidate_deleted_user_cache(uid)
         await _refresh_related_users(related_user_ids, uid)
         await _refresh_global_surfaces(uid)
+        # Owner Piece data and viewer reads are removed by the Auth deletion transaction.
         await _delete_auth_user(uid)
         result.auth_user_deleted = True
     except Exception as exc:
