@@ -33,11 +33,14 @@ Important: running 中に enqueue が来た場合
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 from analysis_job_progress import MapJobClaimChanged, MapJobClaimUnavailable
 from supabase_client import ensure_supabase_config, sb_get, sb_post, sb_patch
@@ -409,6 +412,22 @@ async def check_map_job_owner(job: AstorJob) -> None:
     await renew_map_job_progress(job)
 
 
+async def _patch_claim_settlement(*, params, patch, prefer):
+    # A retry carries the original claim/revision fence. A lost response after
+    # a successful transition cannot match that claim again.
+    for attempt in range(3):
+        try:
+            response = await sb_patch(f'/rest/v1/{JOBS_TABLE}', params=params,
+                json=patch, prefer=prefer, timeout=8.0)
+            if response.status_code not in (429, 500, 502, 503, 504):
+                return response
+        except (httpx.TransportError, OSError):
+            pass
+        if attempt < 2:
+            await asyncio.sleep(2 ** attempt)
+    raise MapJobClaimUnavailable('map_settlement_unavailable')
+
+
 async def mark_done_if_unchanged(
     *,
     job_key: str,
@@ -442,13 +461,11 @@ async def mark_done_if_unchanged(
         "run_after": now_iso,
     }
 
-    resp = await sb_patch(
-        f"/rest/v1/{JOBS_TABLE}",
-        json=patch,
-        params=params,
-        prefer="return=representation",
-        timeout=8.0,
-    )
+    if claim is not None:
+        resp = await _patch_claim_settlement(params=params, patch=patch, prefer='return=representation')
+    else:
+        resp = await sb_patch(f'/rest/v1/{JOBS_TABLE}', json=patch, params=params,
+            prefer='return=representation', timeout=8.0)
     if resp.status_code not in (200, 204):
         logger.error("mark_done_if_unchanged failed: %s %s", resp.status_code, (resp.text or "")[:500])
         return False
@@ -467,18 +484,18 @@ async def _settle_map_retry(job: AstorJob, patch: Dict[str, Any], *, now: str) -
     owner = _map_claim_params(job)
     if job.attempts >= job.max_attempts:
         patch.update(status='failed', finished_at=now)
-    response = await sb_patch(f'/rest/v1/{JOBS_TABLE}', json=patch,
+    response = await _patch_claim_settlement(patch=patch,
         params={**owner, 'updated_at': 'eq.' + job.updated_at, 'select': 'job_key'},
-        prefer='return=representation', timeout=8.0)
+        prefer='return=representation')
     if response.status_code != 200:
         raise MapJobClaimUnavailable('map_retry_unavailable')
     rows = response.json()
     if not isinstance(rows, list) or len(rows) > 1:
         raise MapJobClaimUnavailable('map_retry_unavailable')
     if not rows:
-        response = await sb_patch(f'/rest/v1/{JOBS_TABLE}',
-            json=dict(status='queued', attempts=0, run_after=now, updated_at=now, last_error=None),
-            params={**owner, 'updated_at': 'neq.' + job.updated_at}, prefer='return=minimal', timeout=8.0)
+        response = await _patch_claim_settlement(
+            patch=dict(status='queued', attempts=0, run_after=now, updated_at=now, last_error=None),
+            params={**owner, 'updated_at': 'neq.' + job.updated_at}, prefer='return=minimal')
         if response.status_code not in (200, 204):
             raise MapJobClaimUnavailable('map_retry_unavailable')
 

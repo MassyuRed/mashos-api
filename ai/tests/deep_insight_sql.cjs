@@ -29,6 +29,8 @@ const issue = async (user, lane, key, { day, guard, theme = '人間関係' } = {
   [user, day ?? (await state(user)).day, lane, lane === 'theme' ? theme : null,
     '大切にしていることは何ですか？ ' + key, key, 'question-' + key, guard ?? (await context(user)).guard]);
 const answer = (user, row, text) => value('select public.deep_insight_answer($1,$2,$3) as v', [user, row.id, text]);
+const answerAndRefresh = (user, row, text, enqueue) => value(
+  'select public.deep_insight_answer_and_refresh($1,$2,$3,$4) as v', [user, row.id, text, enqueue]);
 const fail = (code, run) => assert.rejects(run, error => error.code === code);
 
 const groundedIssue = async (user, receipt, { day, guard, theme = '人間関係' } = {}) => value(
@@ -543,6 +545,65 @@ async function verifyEffectiveEmlisControls() {
   assert.equal((await state(owner)).history[0].answer_text, saved.question.answer_text);
 }
 
+async function verifyDurableAnswerRefresh() {
+  const owner = '00000000-0000-0000-0000-000000000030';
+  const jobKey = 'myprofile_latest_refresh:' + owner;
+  const job = () => value('select (select to_jsonb(j) from public.astor_jobs j where j.job_key=$1) as v', [jobKey]);
+  await db.exec('reset role');
+  await db.query('insert into auth.users(id) values($1)', [owner]);
+  await db.query("insert into public.profiles(id,subscription_tier) values($1,'premium')", [owner]);
+  await db.exec('set role service_role');
+
+  const recordsQuestion = (await issue(owner, 'records', 'records-with-refresh')).question;
+  const themeQuestion = (await issue(owner, 'theme', 'theme-with-refresh')).question;
+  const recordsAnswer = '自分の考えが伝わったときは、そのまま話を続けます。';
+  const themeAnswer = '相手が落ち着いて聞けるかを先に確認します。';
+  await fail('P0002', () => answerAndRefresh(plus, recordsQuestion, recordsAnswer, true));
+  assert.equal(await job(), null);
+
+  // A scheduling error rolls back both writes. A retry can then save both.
+  await db.query(`insert into public.astor_jobs(job_key,job_type,user_id,payload,priority,run_after)
+    values($1,'another_job',$2,'{}',0,now())`, [jobKey, plus]);
+  await fail('P0001', () => answerAndRefresh(owner, recordsQuestion, recordsAnswer, true));
+  assert.equal((await state(owner)).records.answer_text, null);
+  assert.equal((await job()).user_id, plus);
+  await db.query('delete from public.astor_jobs where job_key=$1', [jobKey]);
+
+  const saved = await answerAndRefresh(owner, recordsQuestion, recordsAnswer, true);
+  assert.equal(saved.inserted, true);
+  assert.equal(saved.question.answer_text, recordsAnswer);
+  assert.equal((await state(owner)).history[0].id, saved.question.id);
+  const queued = await job();
+  assert.equal(queued.user_id, owner);
+  assert.equal(queued.job_type, 'myprofile_latest_refresh_v1');
+  assert.equal(queued.status, 'queued');
+  assert.equal(queued.payload.trigger, 'deep_insight_answer');
+  assert.ok(!JSON.stringify(queued.payload).includes(recordsAnswer));
+  assert.equal(Date.parse(queued.run_after) - Date.parse(queued.updated_at), 20_000);
+  assert.deepEqual(await answerAndRefresh(owner, recordsQuestion, recordsAnswer, true), { ...saved, inserted: false });
+  assert.deepEqual(await job(), queued);
+  await fail('23505', () => answerAndRefresh(owner, recordsQuestion, '違う回答', true));
+  assert.deepEqual(await job(), queued);
+
+  await db.query(`update public.astor_jobs set status='running',attempts=4,worker_id='test-worker',
+    started_at=clock_timestamp(),run_after=now()+interval '5 minutes',
+    payload='{"force":true}',updated_at=clock_timestamp() where job_key=$1`, [jobKey]);
+  const running = await job();
+  assert.equal((await answerAndRefresh(owner, themeQuestion, themeAnswer, true)).inserted, true);
+  const coalesced = await job();
+  for (const field of ['status', 'attempts', 'worker_id', 'started_at', 'run_after']) {
+    assert.equal(coalesced[field], running[field]);
+  }
+  assert.equal(coalesced.payload.force, true);
+  assert.equal(coalesced.last_error, 'map_updated_while_running');
+  assert.notEqual(coalesced.updated_at, running.updated_at);
+  const snapshot = await value('select public.analysis_cumulative_source_snapshot($1) as v', [owner]);
+  const answers = snapshot.members.filter((m) => m.deep_insight);
+  assert.deepEqual(answers.map((m) => [m.original.id, m.original.memo]), [
+    [recordsQuestion.id, recordsAnswer], [themeQuestion.id, themeAnswer],
+  ]);
+}
+
 async function run() {
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create table auth.users(id uuid primary key);
@@ -748,6 +809,10 @@ async function run() {
   await fail('P0002', () => readQuestion(plus, '00000000-0000-0000-0000-000000000000'));
   await verifySkippedEmlisControls();
   await verifyEffectiveEmlisControls();
+  await db.exec('reset role');
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261128053620_deep_insight_answer_refresh.sql'), 'utf8'));
+  await verifyDurableAnswerRefresh();
 
   for (const role of ['anon', 'authenticated']) {
     await db.exec('set role ' + role);
@@ -767,6 +832,7 @@ async function run() {
     await fail('42501', () => value('select public.deep_insight_record_assessment_settle($1,$2,now(),now(),false) as v',
       ['test-job', 'test-worker']));
     await fail('42501', () => answer(free, first, saved.question.answer_text));
+    await fail('42501', () => answerAndRefresh(free, first, saved.question.answer_text, true));
     await fail('42501', () => value('select public.deep_insight_issue_grounded($1,current_date,$2,$3,$4,$5,$6,$7,$8) as v',
       [free, 'records', null, 'x', 'x', 'x', 'x', JSON.stringify(grounding)]));
   }

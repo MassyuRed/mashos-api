@@ -1520,6 +1520,32 @@ def test_first_skipped_distress_excludes_past_negation():
     assert _BARE_PAST_DISTRESS.fullmatch('つらくなかったです。') is None
 
 
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+def test_first_unanswered_skip_only_passes_current_input(natural_case, qdb, monkeypatch, tier):
+    user, parent, service, calls = natural_case
+    qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
+    memo = 'つらかったんです。'
+    past_memo = '先週の会議はつらかったんです。'
+    qdb.query('update public.emotions set memo=$2 where id=$1', [parent, memo])
+    past = insert_past(qdb, user, past_memo)
+    service = _active_application_owner(monkeypatch, service.natural_reply_source, 'true')
+    initial = run(service.start(user, parent))
+    assert initial['state'] == 'AWAITING_ANSWER', initial
+    first = json.loads(calls[0].material_json)
+    assert [record['input_id'] for record in first['past_user_records']] == ([] if tier == 'free' else [past])
+
+    final = run(service.action(user, initial['thread_id'], action='skip',
+        question_id=initial['pending_question']['question_id'], expected_revision=initial['revision'],
+        idempotency_key='skip-with-owned-history'))
+    assert final['state'] == 'COMPLETED' and final['body_state'] == 'FINAL', final
+    final_material = json.loads(calls[1].material_json)
+    assert final_material['current']['memo'] == memo
+    assert final_material['past_user_records'] == final_material['user_frame_feedback'] == []
+    assert past_memo not in (calls[1].writer_material_json or '')
+    assert run(service.get(user, parent)) == final
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize('tier,route,memo,action,expected,body', [
     ('free', 'answer', '気がかりは残っている。この先がまだ不安だからだ。', '今後を考えた。',
      '「この先」について、どんなことが不安ですか？', 'この先への不安が残っているのですね。'),

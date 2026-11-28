@@ -140,7 +140,7 @@ def test_failed_phase_never_posts_again(monkeypatch, merge_exchange, failed_phas
                 if failure == 'invalid_content':
                     return successful_response('{}')
                 if failure != 'late':
-                    return httpx.Response(failure)
+                    return httpx.Response(failure, headers={'Retry-After': '90'})
                 elapsed += 221
             else:
                 elapsed += 180
@@ -149,6 +149,10 @@ def test_failed_phase_never_posts_again(monkeypatch, merge_exchange, failed_phas
         if failure == 'cancel':
             with pytest.raises(asyncio.CancelledError):
                 await model_source(stage, handler)(stage, per_phase=True)
+        elif failure == 429:
+            with pytest.raises(sources.AnalysisModelRateLimited, match='analysis_model_rate_limited') as captured:
+                await model_source(stage, handler)(stage, per_phase=True)
+            assert captured.value.retry_after == 90
         else:
             error, code = ((TimeoutError, 'analysis_model_source_timeout') if failure == 'late'
                 else (RuntimeError, 'analysis_model_source_unavailable'))

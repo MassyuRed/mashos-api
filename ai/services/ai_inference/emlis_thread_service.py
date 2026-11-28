@@ -1050,6 +1050,11 @@ class EmlisThreadService:
         received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
         started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
         prior = received or started
+        # A receipt created before this policy keeps its original writer on
+        # resume. A new first-question skip never sends optional paid context.
+        current_only = (prior['payload'].get('first_skip_current_only') is True if prior else
+            t['data'].get('natural_question_stop') == 'skip' and t['issued_count'] == 1
+            and not t.get('latest_answer_event_id') and not correcting)
         if prior is not None:
             context_version = prior["payload"].get("writer_context_version")
         elif not correcting and unspecified_concern_focus(snapshot["original"]):
@@ -1099,6 +1104,7 @@ class EmlisThreadService:
             use_issued_answer_reception=use_issued_answer_reception,
             use_first_skipped_distress=use_first_skipped_distress,
             scope_unspecified_concern=context_version == UNSPECIFIED_CONCERN_CONTEXT_VERSION,
+            current_only=current_only,
             direct_feeling_correction_context_version=direct_version,
             prepared_meaning=prepared_meaning,
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
@@ -1121,6 +1127,8 @@ class EmlisThreadService:
         material = replace(material, recipient_voice_version=voice_version, recipient_display_name_call=name_call)
         writer_identity = ({"recipient_voice_version": voice_version, "recipient_display_name_call": name_call}
                            if voice_version else {})
+        if current_only:
+            writer_identity['first_skip_current_only'] = True
         history_line = None
         if material.meaning_profile is not None:
             writer_identity.update({'meaning_profile': material.meaning_profile,

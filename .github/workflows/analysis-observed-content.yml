@@ -91,6 +91,7 @@ name: Analysis observed content
       - supabase/migrations/*_analysis_map_correction_handoff.sql
       - supabase/migrations/*_analysis_deep_insight_answer_handoff.sql
       - supabase/migrations/*_deep_insight_questions.sql
+      - supabase/migrations/*_deep_insight_answer_refresh.sql
       - supabase/migrations/*_deep_insight_grounded_questions.sql
       - supabase/migrations/*_deep_insight_theme_cooldown.sql
       - supabase/migrations/*_deep_insight_theme_ready_notifications.sql

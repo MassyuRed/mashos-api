@@ -5,11 +5,14 @@ The normal application remains finite unless its own server setting opts in.
 """
 from __future__ import annotations
 
-from functools import lru_cache
 import asyncio
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from functools import lru_cache
 import hashlib
 import json
 import logging
+from math import ceil
 import os
 from urllib.parse import urlsplit
 
@@ -81,6 +84,26 @@ class AnalysisDirectHistoryPromptTooLarge(RuntimeError):
     """A whole-history v24 request grew beyond its bound after PLAN was admitted."""
 
 
+class AnalysisModelRateLimited(RuntimeError):
+    """The analysis provider has temporarily exhausted its capacity."""
+
+    def __init__(self, retry_after):
+        super().__init__('analysis_model_rate_limited')
+        self.retry_after = 0
+        if retry_after:
+            retry_after = retry_after.strip()
+            try:
+                if retry_after.isascii() and retry_after.isdecimal() and len(retry_after) <= 9:
+                    self.retry_after = int(retry_after)
+                else:
+                    deadline = parsedate_to_datetime(retry_after)
+                    if deadline.tzinfo is not None:
+                        seconds = (deadline - datetime.now(timezone.utc)).total_seconds()
+                        self.retry_after = max(0, ceil(seconds))
+            except (ValueError, OverflowError):
+                pass
+
+
 def _semantic_message_bytes(prepared):
     return len(json.dumps(prepared.messages(), ensure_ascii=False,
         separators=(',', ':'), allow_nan=False).encode('utf-8'))
@@ -141,6 +164,8 @@ class SelfHostedAnalysisModelSource:
                         json=dict(model=self.model, messages=messages, temperature=0,
                             max_tokens=2048, stream=False,
                             chat_template_kwargs={'enable_thinking': False})) as response:
+                    if response.status_code == 429:
+                        raise AnalysisModelRateLimited(response.headers.get('Retry-After'))
                     if response.status_code != 200:
                         raise RuntimeError('analysis_model_source_unavailable')
                     body = bytearray()
@@ -166,6 +191,8 @@ class SelfHostedAnalysisModelSource:
                 hashlib.sha256(raw.encode('utf-8')).hexdigest(), 'stop', raw)
         except httpx.TimeoutException:
             raise TimeoutError('analysis_model_source_timeout') from None
+        except AnalysisModelRateLimited:
+            raise
         except (httpx.HTTPError, httpx.InvalidURL, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
             raise RuntimeError('analysis_model_source_unavailable') from None
 
@@ -262,6 +289,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                             headers={'Authorization': 'Bearer ' + self._api_key}, json=body,
                             timeout=httpx.Timeout(remaining, connect=min(15.0, remaining))) as response:
                         stage, status = 'http_status', response.status_code
+                        if status == 429:
+                            raise AnalysisModelRateLimited(response.headers.get('Retry-After'))
                         if status != 200:
                             raise RuntimeError('analysis_model_source_unavailable')
                         stage = 'response_read'
@@ -368,7 +397,7 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                 'remaining_tokens=%s prompt_bytes=%s prompt_limit=%s request_bytes=%s request_limit=%s',
                 phase, stage, status, reason, remaining_tokens, prompt_bytes, maximum,
                 request_bytes, SEMANTIC_MAX_REQUEST_BYTES)
-            if isinstance(exc, AnalysisDirectHistoryPromptTooLarge):
+            if isinstance(exc, (AnalysisDirectHistoryPromptTooLarge, AnalysisModelRateLimited)):
                 raise
             raise RuntimeError('analysis_model_source_unavailable') from None
 
@@ -399,6 +428,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                 async with client.stream('POST', self.endpoint,
                         headers={'Authorization': 'Bearer ' + self._api_key},
                         json=body) as response:
+                    if response.status_code == 429:
+                        raise AnalysisModelRateLimited(response.headers.get('Retry-After'))
                     if response.status_code != 200:
                         raise RuntimeError('analysis_model_source_unavailable')
                     body = bytearray()
@@ -423,6 +454,8 @@ class SelfHostedSemanticAnalysisModelSource(SelfHostedAnalysisModelSource):
                 hashlib.sha256(raw.encode('utf-8')).hexdigest(), 'stop', raw)
         except httpx.TimeoutException:
             raise TimeoutError('analysis_model_source_timeout') from None
+        except AnalysisModelRateLimited:
+            raise
         except (httpx.HTTPError, ValueError, TypeError, KeyError, UnicodeError, RuntimeError):
             raise RuntimeError('analysis_model_source_unavailable') from None
 

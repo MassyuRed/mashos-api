@@ -32,6 +32,7 @@ from piece_v2_store import save_piece, set_piece_visibility, delete_piece
 _B2 = runpy.run_path(str(Path(__file__).with_name('test_b02_piece_v2_foundation.py')))
 _M3 = _ROOT / 'supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql'
 _M4 = _ROOT / 'supabase/migrations/20260808_004_piece_v2_atomic_functions.sql'
+_ACCOUNT_WITHDRAWAL = _ROOT / 'supabase/migrations/20261128053404_piece_account_withdrawal.sql'
 _OWNER, _VIEWER = _B2['_OWNER'], _B2['_VIEWER']
 _SAVE_FIELDS = ('p_owner_user_id','p_preview_id','p_expected_preview_revision',
                 'p_piece_text_hash','p_content_payload_hash','p_visual_recipe_hash',
@@ -86,8 +87,10 @@ def database():
             assert admin.execute("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f','S')").fetchone() == (0,)
 
 
-def _preview(conn):
+def _preview(conn, *, owner=_OWNER):
     row = _B2['_record'](fmt='short_essay')
+    row['owner_user_id'] = owner
+    row['source_lineage']['source_input']['source_owner_user_id'] = str(owner)
     row['expires_at'] = conn.execute("SELECT clock_timestamp()+interval '10 minutes'").fetchone()[0]
     _B2['_insert'](conn, 'piece_records', row)
     return row
@@ -705,3 +708,68 @@ def test_native_resonance_is_atomic_and_rechecks_publication_and_follower_rights
     conn.execute('DELETE FROM auth.users WHERE id=%s', (_VIEWER,))
     assert conn.execute('SELECT count(*) FROM public.piece_record_resonances').fetchone() == (0,)
     assert _used(conn) == 1
+
+
+def test_native_account_withdrawal_removes_piece_data_and_retries_atomically(database):
+    conn, pg, _ = database
+    other_owner = uuid4()
+    _author_visibility_schema(conn, other_owner)
+    conn.execute((_ROOT / 'supabase/migrations/20261126070000_piece_v2_resonance.sql').read_text())
+    conn.execute(_ACCOUNT_WITHDRAWAL.read_text())
+    conn.execute('INSERT INTO public.profiles VALUES (%s, %s)', (other_owner, 'free'))
+
+    saved, draft, removed = (_preview(conn) for _ in range(3))
+    other = _preview(conn, owner=other_owner)
+    _save(conn, saved, key='withdrawal-saved')
+    _save(conn, removed, key='withdrawal-removed')
+    _save(conn, other, key='withdrawal-other', owner=other_owner)
+    _rpc(conn, 'piece_delete_v2', _delete_args(removed))
+    for record in (saved, other):
+        _B2['_insert'](conn, 'piece_export_receipts', dict(
+            owner_user_id=record['owner_user_id'], piece_id=record['id'],
+            idempotency_key_hash='f'*64, piece_text_hash=record['piece_text_hash'],
+            visual_recipe_hash=record['visual_recipe_hash'], outcome='succeeded'))
+        _B2['_insert'](conn, 'piece_record_metrics', dict(piece_id=record['id']))
+        _B2['_insert'](conn, 'piece_record_reads', dict(piece_id=record['id'], viewer_user_id=_VIEWER))
+    _B2['_insert'](conn, 'piece_record_reads', dict(piece_id=other['id'], viewer_user_id=_OWNER))
+    for record, viewer in ((saved, _VIEWER), (other, _OWNER), (other, _VIEWER)):
+        _B2['_insert'](conn, 'piece_record_resonances', dict(
+            piece_id=record['id'], owner_user_id=record['owner_user_id'], viewer_user_id=viewer))
+
+    # Single-Piece deletion keeps its quota debit and idempotency receipt.
+    assert _used(conn) == 3
+    owner_tables = ('piece_records', 'piece_quota_month_locks', 'piece_quota_consumptions',
+                    'piece_export_receipts', 'piece_delete_receipts')
+
+    def owner_counts(owner):
+        return tuple(conn.execute('SELECT count(*) FROM public.' + table + ' WHERE owner_user_id=%s',
+                                  (owner,)).fetchone()[0] for table in owner_tables)
+
+    assert owner_counts(_OWNER) == (2, 1, 2, 1, 1)
+    other_counts = owner_counts(other_owner)
+    assert other_counts == (1, 1, 1, 1, 0)
+
+    conn.execute("""CREATE FUNCTION public.synthetic_withdrawal_failure() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'SYNTHETIC_WITHDRAWAL_FAILURE'; END $$""")
+    conn.execute("""CREATE TRIGGER synthetic_withdrawal_failure BEFORE DELETE ON public.piece_delete_receipts
+        FOR EACH ROW EXECUTE FUNCTION public.synthetic_withdrawal_failure()""")
+    with pytest.raises(pg.errors.RaiseException, match='SYNTHETIC_WITHDRAWAL_FAILURE'):
+        conn.execute('DELETE FROM auth.users WHERE id=%s', (_OWNER,))
+    assert conn.execute('SELECT id FROM auth.users WHERE id=%s', (_OWNER,)).fetchone() == (_OWNER,)
+    assert owner_counts(_OWNER) == (2, 1, 2, 1, 1)
+    assert owner_counts(other_owner) == other_counts
+
+    conn.execute('DROP TRIGGER synthetic_withdrawal_failure ON public.piece_delete_receipts')
+    assert conn.execute('DELETE FROM auth.users WHERE id=%s', (_OWNER,)).rowcount == 1
+    assert conn.execute('DELETE FROM auth.users WHERE id=%s', (_OWNER,)).rowcount == 0
+    assert owner_counts(_OWNER) == (0, 0, 0, 0, 0)
+    assert owner_counts(other_owner) == other_counts
+    assert conn.execute('SELECT id FROM public.piece_records ORDER BY id').fetchall() == [(other['id'],)]
+    assert conn.execute('SELECT piece_id FROM public.piece_record_metrics').fetchall() == [(other['id'],)]
+    for table in ('piece_record_reads', 'piece_record_resonances'):
+        assert conn.execute('SELECT piece_id, viewer_user_id FROM public.' + table).fetchall() == [
+            (other['id'], _VIEWER),
+        ]
+    assert conn.execute('SELECT id FROM public.piece_records WHERE id=%s', (draft['id'],)).fetchone() is None
+    with pytest.raises(pg.errors.ForeignKeyViolation):
+        _preview(conn)

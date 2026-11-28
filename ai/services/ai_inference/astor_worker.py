@@ -47,6 +47,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
+from fastapi import HTTPException
 
 _CURRENT_DIR = Path(__file__).resolve().parent
 if str(_CURRENT_DIR) not in sys.path:
@@ -4484,6 +4485,9 @@ async def _worker_loop() -> None:
             try:
                 attempts = int(claimed.attempts or 0)
                 max_attempts = int(claimed.max_attempts or 0) or 8
+                model_limited = map_claim is not None and isinstance(exc, HTTPException) and (
+                    exc.status_code == 429 and exc.detail == 'analysis_model_rate_limited')
+                last_error = exc.detail if model_limited else str(exc)
                 if attempts >= max_attempts:
                     try:
                         if claimed.job_type == "inspect_reflection_v1":
@@ -4536,13 +4540,17 @@ async def _worker_loop() -> None:
                                 )
                     except Exception:
                         pass
-                    await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), claim=map_claim)
+                    await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=last_error, claim=map_claim)
                 else:
                     # simple backoff: 5s, 10s, 20s, 40s... capped
                     delay = min(120, max(5, 5 * (2 ** max(0, attempts - 1))))
-                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error=str(exc), delay_seconds=int(delay), claim=map_claim)
+                    if model_limited:
+                        provider_delay = int((exc.headers or {}).get('Retry-After') or 0)
+                        delay = max(provider_delay, min(300, 30 * (2 ** max(0, attempts - 1))))
+                    await requeue(job_key=claimed.job_key, worker_id=worker_id, error=last_error, delay_seconds=delay, claim=map_claim)
             except Exception:
-                pass
+                if map_claim is not None:
+                    logger.warning('MAP claimant could not confirm settlement; awaiting stale recovery')
             logger.exception("job failed. key=%s type=%s err=%s", claimed.job_key, claimed.job_type, exc)
 
     logger.info("ASTOR worker stopping.")

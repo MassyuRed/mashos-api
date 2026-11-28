@@ -131,7 +131,7 @@ def api_harness(monkeypatch):
                                              "guard": input_material["theme_guard"]})
         if name == "deep_insight_issue_grounded":
             return httpx.Response(200, json={"status": "issued", "question": {**Q, "question_text": payload["p_question_text"]}})
-        if name == "deep_insight_answer":
+        if name == "deep_insight_answer_and_refresh":
             return httpx.Response(200, json={"inserted": True, "question": {
                 **Q, "answer_text": payload["p_answer_text"], "answered_at": "2026-11-21T10:00:00Z"}})
         if name == "deep_insight_theme_notification_write":
@@ -149,16 +149,13 @@ def api_harness(monkeypatch):
     async def release(*, lock_key, owner_id):
         assert owner_id == "test-lease"
 
-    async def refresh(owner, *, trigger):
-        calls.append(("refresh", (owner, trigger)))
-
     import analysis_cumulative_service
     monkeypatch.setattr(api, "_resolve_user_id_from_token", resolve)
     monkeypatch.setattr(api, "sb_post_rpc", storage_rpc)
     monkeypatch.setattr(api, "_generate_candidate", generate)
     monkeypatch.setattr(api, "try_acquire_lock", acquire)
     monkeypatch.setattr(api, "release_lock", release)
-    monkeypatch.setattr(analysis_cumulative_service, "request_map_refresh", refresh)
+    monkeypatch.setattr(analysis_cumulative_service, "_map_refresh_queue_enabled", lambda: True)
     app = FastAPI()
     api.register_deep_insight_routes(app)
     return TestClient(app), state, calls, answers, input_material
@@ -359,7 +356,10 @@ def test_issue_and_exact_answer_pass_verified_owner_to_the_store(api_harness):
     response = client.post("/deep-insight/answers", headers=AUTH, json={"question_id": QUESTION, "answer_text": "本人の回答\n次の段落"})
     assert response.status_code == 200 and response.json()["question"]["answer_text"] == "本人の回答\n次の段落"
     assert "inserted" not in response.json()
-    assert calls[-1] == ("refresh", (OWNER, "deep_insight_answer"))
+    assert calls[-1] == ("deep_insight_answer_and_refresh", {
+        "p_user_id": OWNER, "p_question_id": QUESTION, "p_answer_text": "本人の回答\n次の段落",
+        "p_enqueue_map": True,
+    })
 
 
 def test_no_merit_is_reused_for_same_material_but_rechecked_after_edit(api_harness):

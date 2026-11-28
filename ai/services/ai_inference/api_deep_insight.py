@@ -396,17 +396,12 @@ def register_deep_insight_routes(app: FastAPI) -> None:
 
     @router.post("/answers", response_model=AnswerResult)
     async def answer_deep_insight_question(command: AnswerCommand, response: Response, owner: str = Depends(_owner)):
+        from analysis_cumulative_service import _map_refresh_queue_enabled
+
         response.headers["Cache-Control"] = "no-store"
-        saved = _stored(_StoredAnswer, await _rpc("deep_insight_answer", {
+        return _stored(_StoredAnswer, await _rpc("deep_insight_answer_and_refresh", {
             "p_user_id": owner, "p_question_id": str(command.question_id), "p_answer_text": command.answer_text,
+            "p_enqueue_map": _map_refresh_queue_enabled(),
         }))
-        from analysis_cumulative_service import request_map_refresh
-        try:
-            # A replay can recover a lost write response without disturbing a
-            # refresh already queued for that original answer.
-            await request_map_refresh(owner, trigger="deep_insight_answer" if saved.inserted else "map_view")
-        except Exception:
-            logger.warning("DeepInsight answer saved; map refresh enqueue unavailable")
-        return saved
 
     app.include_router(router)

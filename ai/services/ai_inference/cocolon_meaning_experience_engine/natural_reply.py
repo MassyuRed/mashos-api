@@ -667,7 +667,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           include_paid_received_answer=False, include_direct_feeling_correction=False,
                           include_initial_standalone_feeling=False, initial_observation_follow_context_version=None,
                           use_issued_answer_reception=False, use_first_skipped_distress=False,
-                          scope_unspecified_concern=False,
+                          scope_unspecified_concern=False, current_only=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -680,6 +680,11 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
     feedback = admitted.control.frame_feedback_sources
     if any(f.source_emotion_id not in source_ids for f in feedback):
         raise NaturalReplyError('natural_reply_frame_feedback_not_connected')
+    if current_only:
+        # The first unanswered skip closes on the original entry. Retain the
+        # admitted thread identity for saves and retries, without showing its
+        # previously admitted history or feedback to this reply writer.
+        histories, feedback = (), ()
     current_feedback = tuple(f for f in feedback if f.source_emotion_id == current_id)
     safety = _source_safety(original, admitted, current_feedback)
     if scope_unspecified_concern:

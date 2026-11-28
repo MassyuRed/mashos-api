@@ -198,6 +198,36 @@ class MapProgressTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((self.row['status'], self.row['last_error']),
                          ('failed', cumulative.NO_ACCEPTED_MAP_STRUCTURE))
 
+    async def test_settlement_retries_transport_loss_without_replacing_another_claim(self):
+        attempts = 0
+
+        async def lose_first_ack(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OSError('database connection unavailable')
+            return await self.patch_row(*args, **kwargs)
+
+        with patch.object(queue, 'sb_patch', lose_first_ack), patch.object(queue.asyncio, 'sleep', AsyncMock()):
+            await queue.mark_failed(job_key=self.job.job_key, claim=self.job, error='analysis_model_rate_limited')
+        self.assertEqual(attempts, 2)
+        self.assertEqual((self.row['status'], self.row['last_error']), ('failed', 'analysis_model_rate_limited'))
+
+    async def test_provider_rate_limit_reschedules_with_retry_after(self):
+        from fastapi import HTTPException
+        import astor_worker as worker
+
+        limited = HTTPException(429, 'analysis_model_rate_limited', headers={'Retry-After': '180'})
+        with patch.object(worker, '_run_map_job', AsyncMock(side_effect=limited)), \
+                patch.object(worker, '_run_worker_maintenance', AsyncMock()), \
+                patch.object(worker, 'fetch_next_queued_job', AsyncMock(side_effect=[self.job, asyncio.CancelledError()])), \
+                patch.object(worker, 'claim_job', AsyncMock(return_value=self.job)), \
+                patch.object(worker, 'requeue', AsyncMock()) as requeue:
+            with self.assertRaises(asyncio.CancelledError):
+                await worker._worker_loop()
+        self.assertEqual(requeue.await_args.kwargs['delay_seconds'], 180)
+        self.assertEqual(requeue.await_args.kwargs['error'], 'analysis_model_rate_limited')
+
 
 if __name__ == '__main__':
     unittest.main()

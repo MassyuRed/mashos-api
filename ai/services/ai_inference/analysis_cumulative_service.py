@@ -22,7 +22,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import HTTPException
 
-from analysis_model_source import (AnalysisDirectHistoryPromptTooLarge, analysis_premium_structure_relations_enabled,
+from analysis_model_source import (AnalysisDirectHistoryPromptTooLarge, AnalysisModelRateLimited, analysis_premium_structure_relations_enabled,
     analysis_primary_structure_reading_mode)
 import analysis_observed_service as observed
 from analysis_observed_service import _checked_projection as _checked_v2_projection, private_storage_evidence, observed_mode
@@ -864,6 +864,8 @@ async def _model_response(model_source, prepared, *, merge_deadline=None, per_ph
         return response
     except TimeoutError:
         raise HTTPException(504, 'analysis_model_source_timeout') from None
+    except AnalysisModelRateLimited as exc:
+        raise HTTPException(429, str(exc), headers={'Retry-After': str(exc.retry_after)}) from None
     except AnalysisDirectHistoryPromptTooLarge:
         raise
     except (httpx.HTTPError, OSError, RuntimeError):
