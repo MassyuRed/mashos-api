@@ -327,6 +327,8 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free',
     })
     if original_memo_only:
         material['control']['original_memo_only'] = True
+    if deep_insight and answer.bound_complete_clause:
+        material['control']['preserve_deep_insight_answer_literal'] = True
     if refined and source.feeling_circumstance is not None:
         from .piece_refined import _validate_feeling_circumstance_source
         _validate_feeling_circumstance_source(source)

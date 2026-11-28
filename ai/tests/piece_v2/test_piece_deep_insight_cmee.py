@@ -97,6 +97,24 @@ def test_selected_owner_answer_can_be_edited_with_its_written_condition_intact(s
             model_candidate=model_receipt(source, '私は、本を読みたい。'))
 
 
+@pytest.mark.parametrize('answer,changed_answer', [
+    ('言い方を大切にしたい。', '私は、言い方を大切にしたい。'),
+    ('同調を選びたくない。', '同調を選びたい。'),
+])
+def test_plain_short_answer_keeps_written_object_and_wish_without_adding_a_subject(source, answer, changed_answer):
+    source = replace(source, answer_text=answer)
+    validate_deep_insight_piece_source(source)
+    model = model_receipt(source, answer)
+    messages = build_piece_model_messages(model.prepared, include_authoring_constraints=True,
+        source_request=request_for(source), include_editorial_choices=True)
+    assert '主語を足さず、回答欄のliteralをそのまま' in messages[0]['content']
+    candidate = generate_piece_candidate(source, authenticated_owner_id=OWNER, model_candidate=model)
+    assert candidate['content_payload']['body_blocks'][-1] == answer
+    with pytest.raises(PieceContractError, match='piece_model_meaning_unassessed_or_changed'):
+        generate_piece_candidate(source, authenticated_owner_id=OWNER,
+            model_candidate=model_receipt(source, changed_answer))
+
+
 @pytest.mark.parametrize('substitution', [
     '相手の話を大切にしたくない。',
     'そのときは、相手の話を大切にしたい。',
@@ -109,9 +127,13 @@ def test_same_model_cannot_change_selected_answer_attribution_or_meaning(source,
             model_candidate=model_receipt(source, substitution))
 
 
-def test_selected_answer_must_be_meaningful_without_generated_question(source):
-    elliptical = replace(source, answer_text='相手が一人の時です。')
-    with pytest.raises(PieceContractError, match='expression_meaning_not_admitted'):
+@pytest.mark.parametrize('answer', [
+    '相手が一人の時です。', 'それを大切にしたい。', '順番を大切にしたいと話した。',
+    '困ったら順番を大切にしたい。',
+])
+def test_selected_answer_must_be_meaningful_without_generated_question(source, answer):
+    elliptical = replace(source, answer_text=answer)
+    with pytest.raises(PieceContractError):
         validate_deep_insight_piece_source(elliptical)
 
 

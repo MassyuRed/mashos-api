@@ -478,6 +478,8 @@ def build_piece_model_messages(prepared, *, include_authoring_constraints=False,
             instruction += ('\nUSER_DEEP_INSIGHT_ANSWERは本人が選んだ回答です。'
                             '元の記録と回答の資料欄を分けたまま、各欄を本人の文章として整えてください。'
                             '資料に書かれていない原因、時点、主語、問いかけを足さないでください。')
+            if control.get('preserve_deep_insight_answer_literal') is True:
+                instruction += '主語を足さず、回答欄のliteralをそのまま出力してください。'
         if control.get('original_memo_only') is True:
             original_source = sources[0]
             original_source['original'].pop('memo_action')

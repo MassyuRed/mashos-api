@@ -675,7 +675,9 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
         relative_feeling_anchor_blocks,
     )
     from piece_v2_contract import validate_piece_text_binding
-    from cocolon_meaning_experience_engine.piece_deep_insight import PieceDeepInsightSourceSnapshot
+    from cocolon_meaning_experience_engine.piece_deep_insight import (
+        PieceDeepInsightAnswerMeaning, PieceDeepInsightSourceSnapshot,
+    )
     if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
             or artifact.eligible_formats != ('short_essay',)):
         raise unavailable('piece_model_artifact_binding')
@@ -712,6 +714,9 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
         offset += len(source_blocks)
         if len(blocks) != len(source_blocks):
             raise unavailable('piece_model_block_partition')
+        if (type(part) is PieceDeepInsightAnswerMeaning and part.bound_complete_clause
+                and blocks != source_blocks):
+            raise unavailable('piece_model_meaning_unassessed_or_changed')
         # Only a completed Piece may resolve this relative time expression.
         # Check the exact licensed surface before reviewing the original answer.
         if anchor is not None and part is meaning.supplemental and blocks == (anchor[1],):

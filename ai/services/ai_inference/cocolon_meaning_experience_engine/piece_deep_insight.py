@@ -62,6 +62,21 @@ def deep_insight_source_ref(source: PieceDeepInsightSourceSnapshot) -> str:
         raise unavailable('piece_deep_insight_source_binding') from None
 
 
+def _has_written_object_and_wish(text: str) -> bool:
+    """Read one finite wish without supplying an unstated subject."""
+    from piece_v2_generation import (
+        _FINITE_PREDICATES, _OMITTED_ACCOUNT_OBJECT, _has_unread_explicit_account_scope,
+    )
+    from piece_v2_expression import _REFERENCE
+
+    if not text.endswith('。') or _REFERENCE.search(text) or _has_unread_explicit_account_scope(text):
+        return False
+    target, particle, predicate = text[:-1].partition('を')
+    return bool(particle and _OMITTED_ACCOUNT_OBJECT.fullmatch(target)
+        and not re.search(r'[がは]', target) and predicate in _FINITE_PREDICATES
+        and predicate.endswith(('たい', 'たいです', 'たくない', 'たくないです')))
+
+
 def build_deep_insight_answer_meaning(source: PieceDeepInsightSourceSnapshot) -> PieceDeepInsightAnswerMeaning:
     from piece_v2_generation import PieceSourceSnapshot
 
@@ -71,7 +86,8 @@ def build_deep_insight_answer_meaning(source: PieceDeepInsightSourceSnapshot) ->
     parsed = build_piece_source_meaning(
         PieceSourceSnapshot(source.original.owner_id, source.question_id, SOURCE_VERSION, source.answer_text),
         expected_owner_id=source.original.owner_id, expected_saved_input_id=source.question_id,
-        expected_source_version=SOURCE_VERSION)
+        expected_source_version=SOURCE_VERSION,
+        bound_complete_clause=_has_written_object_and_wish(source.answer_text))
     encoding = 'CMEE_PIECE_DEEP_INSIGHT_ANSWER_FRAME_UTF8_V1'
     prefix = f'{encoding}\n{source_ref}\n'.encode()
     raw = prefix + parsed.envelope.raw_utf8

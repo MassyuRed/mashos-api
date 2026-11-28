@@ -26,7 +26,7 @@ def piece_db(qdb):
 
 
 @pytest.fixture
-def selection(piece_db):
+def selection(piece_db, request):
     owner, reader, parent, unrelated = (str(uuid4()) for _ in range(4))
     assert 'code' not in piece_db.query('insert into auth.users values($1),($2)', [owner, reader])
     assert 'code' not in piece_db.query("insert into public.profiles values($1,'premium'),($2,'premium')", [owner, reader])
@@ -45,7 +45,8 @@ def selection(piece_db):
         owner, day, QUESTION, 'deep-insight-target-' + receipt['target_key'],'test-question',context['guard'],json.dumps(receipt))
     assert issued['status'] == 'issued'
     question = issued['question']['id']
-    saved = value(piece_db, 'select public.deep_insight_answer($1,$2,$3) as v', owner, question, ANSWER)
+    saved = value(piece_db, 'select public.deep_insight_answer($1,$2,$3) as v',
+        owner, question, getattr(request, 'param', ANSWER))
     assert saved['inserted'] is True
     return owner, reader, parent, question, unrelated
 

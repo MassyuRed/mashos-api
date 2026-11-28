@@ -100,7 +100,9 @@ def application(linked_db, selection, monkeypatch):
     return TestClient(server, headers=AUTH), model_calls
 
 
-def test_selected_answer_survives_piece_issue_edit_save_and_reload(application, selection):
+@pytest.mark.parametrize('selection,answer', [(text, text) for text in
+    (ANSWER, '言い方を大切にしたい。')], indirect=['selection'])
+def test_selected_answer_survives_piece_issue_edit_save_and_reload(application, selection, answer):
     client, model_calls = application
     _, _, source, question, _ = selection
     history = client.get('/deep-insight')
@@ -119,8 +121,8 @@ def test_selected_answer_survives_piece_issue_edit_save_and_reload(application, 
     issued = client.post(PREVIEW, headers={'Idempotency-Key': 'selected-piece'}, json=request)
     assert issued.status_code == 200, issued.text
     preview = issued.json()
-    assert model_calls == [(RECORD, ANSWER)]
-    assert RECORD in preview['piece_text'] and ANSWER in preview['piece_text']
+    assert model_calls == [(RECORD, answer)]
+    assert RECORD in preview['piece_text'] and answer in preview['piece_text']
     assert QUESTION not in issued.text and 'source_lineage' not in preview
 
     visual = client.patch(f"{PREVIEW}/{preview['preview_id']}", json={
@@ -139,7 +141,7 @@ def test_selected_answer_survives_piece_issue_edit_save_and_reload(application, 
     assert detail.status_code == 200, detail.text
     assert detail.json()['piece_text'] == edited['piece_text']
     assert QUESTION not in detail.text and 'source_lineage' not in detail.json()
-    assert model_calls == [(RECORD, ANSWER)]
+    assert model_calls == [(RECORD, answer)]
 
 
 def test_wrong_or_revoked_selection_does_not_reach_model(application, linked_db, selection):
