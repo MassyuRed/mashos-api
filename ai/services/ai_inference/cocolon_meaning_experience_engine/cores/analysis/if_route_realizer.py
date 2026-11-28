@@ -745,6 +745,9 @@ branch_contextは本人の保存マップから、この分岐に関係する選
 各案は、渡された全ての起点、案の最初の行動、条件が成り立った場合に次に取れる具体的な行動、結果や条件がまだ分からない点の順で辿れる図にします。最初の行動から次の行動への線に、その場で確かめられる条件をcondition_refsで付けます。条件の違いで別の行動を考えられる場合は分岐を示します。不明な条件の成立、相手の反応、負担や結果を断定しません。具体的な仮の手順を作る材料が足りなければclarificationを返します。
 番号つきのPERSON_ALTERNATIVEが案の数だけ渡された場合は、一案につき対応する本人案の全文をUSER_CHOICEに置きます。その次に加える行動はSIMULATED_EXTENSIONです。PERSON_ALTERNATIVEがなければ、最初の行動もSIMULATED_EXTENSIONです。BRANCH_INTENTやCONSTRAINTを本人案にしません。本人が書いた必要条件は、適用する案のrequired_conditionsに全文とfield番号を残します。'''
 
+_IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS = _IF_MODEL_INSTRUCTION_CONDITIONAL + '''
+本人のCONSTRAINTはすべての案に共通です。各案のrequired_conditionsに一件ずつ置き、本人の文の全文をtextへ、対応するfield番号一つをsource_refsへ入れます。条件の追記・言い換え・結合はしません。予測できない反応や案ごとに仮に確認する条件は別の行に置き、本人のCONSTRAINTの番号を付けません。'''
+
 
 def _conditional_branch_context(projection, anchors):
     refs = {anchor['node_ref'] for anchor in anchors}
@@ -825,10 +828,11 @@ def prepare_if_model_request(request, *, response=None):
                             _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
                             _IF_MODEL_INSTRUCTION_LEGACY)
         if branch_context is not None:
-            instructions = (_IF_MODEL_INSTRUCTION_CONDITIONAL, *instructions)
+            instructions = (_IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS, _IF_MODEL_INSTRUCTION_CONDITIONAL, *instructions)
         for instruction in instructions:
             model_material = (dict(material, branch_context=branch_context)
-                              if instruction == _IF_MODEL_INSTRUCTION_CONDITIONAL else material)
+                              if instruction in (_IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS,
+                                                 _IF_MODEL_INSTRUCTION_CONDITIONAL) else material)
             messages = [dict(role='system', content=instruction), dict(role='user', content=_json(model_material))]
             request_ref = 'analysis-if-request:' + commitment([asdict(request), seed, messages])[7:]
             if response is None or (response.request_ref == request_ref
@@ -894,7 +898,11 @@ def _realize_model_set(prepared, response, packet):
     artifact_id, set_id = 'artifact:' + suffix[:32], 'scenario-set:' + suffix
     scenarios, graphs, shown = [], [], []
     ids, labels = set(), set()
-    conditional = prepared.messages()[0]['content'] == _IF_MODEL_INSTRUCTION_CONDITIONAL
+    instruction = prepared.messages()[0]['content']
+    bind_constraints = instruction == _IF_MODEL_INSTRUCTION_EXPLICIT_CONSTRAINTS
+    conditional = bind_constraints or instruction == _IF_MODEL_INSTRUCTION_CONDITIONAL
+    explicit_constraints = {i: sources[i - 1]['text'] for i, ref in source_refs.items()
+                            if bind_constraints and ref in seed['constraint_refs']}
     authored_choices = {_source_ref(_source(choice, request.authenticated_owner_scope))
                         for choice in request.scenario_choices} if conditional else set()
     for proposal in packet['scenarios']:
@@ -916,13 +924,24 @@ def _realize_model_set(prepared, response, packet):
         digest = commitment([set_id, proposal['scenario_id']])[7:]
         scenario_ref, graph_id = 'analysis-if-scenario:' + digest + '@1', 'hypothetical:' + digest
         condition_ids, conditions = set(), []
+        retained_constraints = set()
         for condition in proposal['required_conditions']:
             _require(_keys(condition, 'condition_id text source_refs')
                      and _text(condition['condition_id'], 100) and condition['condition_id'] not in condition_ids,
                      'analysis_if_model_packet_invalid')
             condition_ids.add(condition['condition_id'])
             _model_source_numbers(condition['source_refs'], source_refs)
-            conditions.append(_model_surface(condition['text']))
+            text = _model_surface(condition['text'])
+            if bind_constraints:
+                referenced = explicit_constraints.keys() & set(condition['source_refs'])
+                if referenced:
+                    number = next(iter(referenced))
+                    _require(condition['source_refs'] == [number] and text == explicit_constraints[number]
+                             and number not in retained_constraints, 'analysis_if_model_constraint_unbound')
+                    retained_constraints.add(number)
+            conditions.append(text)
+        if bind_constraints:
+            _require(retained_constraints == explicit_constraints.keys(), 'analysis_if_model_constraint_unbound')
         nodes, visible_nodes, node_ids, origins = [], [], set(), set()
         for node in proposal['nodes']:
             _require(_keys(node, 'node_id step_kind origin text anchor_ref source_refs unknown_reasons')

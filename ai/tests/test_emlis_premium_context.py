@@ -12,8 +12,9 @@ from test_analysis_cumulative import OWNER
 from test_analysis_cumulative_model_source import sql_source
 from test_analysis_interpretation_correction_sources import sql_script
 from test_analysis_premium_structure_relations import COEXISTENCE, _artifact, saved_map_source
-from test_emlis_natural_reply_application import natural_case
-from test_emlis_q2_application import run
+from test_emlis_natural_question_application import THREE, natural_questions
+from test_emlis_natural_reply_application import _active_application_owner, insert_past, natural_case
+from test_emlis_q2_application import answer, run
 from test_emlis_q3_application import qdb
 
 
@@ -117,6 +118,121 @@ def test_graph_uses_only_prior_dated_non_secret_emotion_records(monkeypatch):
     assert run(weather.build_prior_kokoro_observation(OWNER, cutoff))[1] != guard
     rows[2]['is_secret'] = True
     assert len(run(weather.build_prior_kokoro_observation(OWNER, cutoff))[0]['recorded_days']) == 1
+
+
+@pytest.mark.parametrize('tier,related_history', [
+    ('free', True), ('plus', True), ('premium', True), ('premium', False),
+])
+def test_entitled_context_in_active_thread_phases(natural_questions, qdb, monkeypatch, tier, related_history):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        ISSUED_ANSWER_RECEPTION_VERSION, QWEN_9B_NATURAL_ALIAS, SelfHostedNaturalReplySource)
+
+    user, parent, _, _ = natural_questions(tier=tier, memo=THREE)
+    past_memo = '友人に褒められたのに、あの時は嬉しくなかった。'
+    insert_past(qdb, user, '昨日は白い鳥を見に行った。')
+    past = insert_past(qdb, user, past_memo) if related_history else None
+    map_facts = {'ref': {'id': str(uuid4())}, 'generated_at': '2026-01-01T00:00:00Z',
+        'structures': [{'title': '自分で選ぶ', 'description': '選べるときの方が安心して任せられます。'}]}
+    chart = {'as_of_jst': '2026-11-28T14:00:00+09:00', 'recorded_days': [
+        {'jst_date': '2026-11-27', 'record_count': 1, 'recorded_emotion_weights': {'不安': 2}}]}
+    messages, read_attempts = [], []
+
+    async def prior_map(owner, input_id):
+        assert owner == user and input_id == parent
+        read_attempts.append('map')
+        return map_facts
+
+    async def prior_chart(owner, cutoff):
+        assert owner == user and cutoff.tzinfo is not None
+        read_attempts.append('chart')
+        return chart, 'chart-sources'
+
+    async def no_deep_insight(owner, input_id, guarded_history):
+        assert owner == user and input_id == parent
+        assert all(row[0] == past for row in guarded_history)
+
+    def transport(request):
+        messages.append(json.loads(request.content)['messages'])
+        reply = ('言葉を受け取ったときの気持ちは、単純ではなかったのですね。' if len(messages) == 1 else
+                 '褒められた言葉の重さも、ここで聞かせてくださったのですね。')
+        return httpx.Response(200, json={'model': QWEN_9B_NATURAL_ALIAS, 'choices': [
+            {'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': reply}},
+        ]})
+
+    provider = SelfHostedNaturalReplySource(endpoint='https://model.invalid/v1/chat/completions',
+        model=QWEN_9B_NATURAL_ALIAS, api_key='synthetic-only', transport=httpx.MockTransport(transport))
+    monkeypatch.setenv('COCOLON_EMLIS_PREMIUM_CONTEXT', 'true')
+    service = _active_application_owner(monkeypatch, provider, 'paid')
+    monkeypatch.setattr(service.store, 'prior_map_context', prior_map)
+    monkeypatch.setattr(service.store, 'related_deep_insight_answer', no_deep_insight)
+    monkeypatch.setattr(weather, 'build_prior_kokoro_observation', prior_chart)
+    initial = run(service.start(user, parent))
+    refined = run(answer(service, user, initial, 'その時は重かった。'))
+    continued = run(service.action(user, initial['thread_id'], action='continue',
+        expected_revision=refined['revision'], idempotency_key='advance-one'))
+    skipped = run(service.action(user, initial['thread_id'], action='skip',
+        question_id=continued['pending_question']['question_id'], expected_revision=continued['revision'],
+        idempotency_key='skip-after-answer'))
+    assert skipped['state'] == 'COMPLETED' and skipped['answer_saved']
+    assert run(service.get(user, parent)) == skipped
+    assert len(messages) == 3
+    materials = [json.loads(row[-1]['content']) for row in messages]
+    assert (past_memo in messages[0][-1]['content']) is (tier != 'free' and related_history)
+    if tier != 'premium':
+        assert not read_attempts and all('prior_premium_context' not in row for row in materials)
+        return
+    assert read_attempts
+    assert all(row['prior_premium_context']['kokoro_graph'] == chart and
+               row['prior_premium_context']['watashi_map']['structures'] == map_facts['structures']
+               for row in materials)
+    assert all('その時は重かった。' in row[-1]['content'] for row in messages[1:])
+    assert all('昨日は白い鳥を見に行った。' not in row[-1]['content'] for row in messages)
+    if not related_history:
+        saved = run(service.store.read(user, input_id=parent))
+        receipts = [e['payload'] for e in saved['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
+        assert [e['writer_context_version'] for e in receipts[1:]] == [ISSUED_ANSWER_RECEPTION_VERSION] * 2
+        assert all(material['本人の補足'] == 'その時は重かった。' for material in materials[1:])
+
+
+def test_paid_narrowed_answer_uses_premium_context_without_reintroducing_independent_action(
+        natural_case, qdb, monkeypatch):
+    from cocolon_meaning_experience_engine.natural_reply import PAID_RECEIVED_ANSWER_CONTEXT_VERSION, NaturalReply
+
+    user, parent, service, _ = natural_case
+    qdb.query("update public.profiles set subscription_tier='premium' where id=$1", [user])
+    memo, action = '褒められたのに、嬉しくなかった。', '会議で発表した。'
+    qdb.query('update public.emotions set memo=$2,memo_action=$3 where id=$1', [parent, memo, action])
+    insert_past(qdb, user, memo)
+    reply = '褒められた時に嬉しくなかったんですね。その時は怖さを感じていたことも伝わってきました。'
+    prompt_materials = []
+
+    async def provider(material):
+        prompt_materials.append(material)
+        return NaturalReply(reply, 'synthetic-provider', material.source_prefix_ref)
+
+    async def unavailable(*_args):
+        return None
+
+    async def graph(*_args):
+        return {'recorded_days': [{'jst_date': '2026-11-27', 'record_count': 1}]}, 'graph-ref'
+
+    service = _active_application_owner(monkeypatch, provider, 'paid')
+    service.premium_context_enabled = True
+    monkeypatch.setattr(service.store, 'prior_map_context', unavailable)
+    monkeypatch.setattr(service.store, 'related_deep_insight_answer', unavailable)
+    monkeypatch.setattr(weather, 'build_prior_kokoro_observation', graph)
+    initial = run(service.start(user, parent))
+    refined = run(answer(service, user, initial, 'その時は怖かった。'))
+    assert refined['body_state'] == 'REFINED' and run(service.get(user, parent)) == refined
+    writer = json.loads(prompt_materials[1].writer_material_json)
+    assert writer['source_context_version'] == PAID_RECEIVED_ANSWER_CONTEXT_VERSION
+    system, wire = build_natural_reply_messages(prompt_materials[1])
+    supplied = json.loads(wire['content'])
+    assert supplied['今回の場面']['補足'] == 'その時は怖かった。'
+    assert supplied['prior_premium_context'] == writer['prior_premium_context']
+    assert len(supplied['past_user_records']) == 1 and supplied['past_user_records'][0]['scope'] == 'PAST_RECORD'
+    assert action not in wire['content'] and initial['pending_question']['text'] not in wire['content']
+    assert '今回の返事は本人が答えた場面に沿います' in system['content']
 
 
 def test_prior_map_read_revalidates_its_saved_cohort_with_existing_sql(saved_map_source):

@@ -301,20 +301,26 @@ def test_analyzed_branch_keeps_person_alternatives_and_requires_a_conditional_ne
     artifact, _, _ = _artifact(COEXISTENCE)
     projection = artifact.safe_projection(authenticated_owner_scope=OWNER)
     alternatives = ('資料の確認だけを引き受ける。', '提出が済むまで新しい依頼を待ってもらう。')
+    constraints = ('相手の話を遮りたくありません。', '約束した提出は遅らせません。')
     req = replace(request(count=2), base_observed_map_ref=artifact.reference,
         base_route_ref=if_route.observed_route_reference(artifact.reference, 'n1'),
         base_projection_json=json.dumps(projection), base_private_evidence_json=json.dumps(artifact.private_evidence()),
+        constraints=tuple(source(f'constraint-{i}', text) for i, text in enumerate(constraints)),
         scenario_choices=tuple(source(f'choice-{i}', text) for i, text in enumerate(alternatives)))
     prepared = if_route.prepare_if_model_request(req)
     material = json.loads(prepared.messages()[1]['content'])
     assert material['branch_context']['primary_structures'][0]['criterion'] == projection['overview']['primary_structures'][0]['criterion']
     assert 'evidence_refs' not in json.dumps(material)
-    assert if_route.admit_if_model_response(prepared, response(prepared)).reason_codes == ('analysis_if_conditional_route_incomplete',)
 
     value = packet(prepared)
+    assert if_route.admit_if_model_response(prepared, response(prepared, value)).reason_codes == ('analysis_if_model_constraint_unbound',)
+    for proposal in value['scenarios']:
+        proposal['required_conditions'] = [dict(condition_id=f'c{i}', text=text, source_refs=[i + 1])
+                                           for i, text in enumerate(constraints, 1)]
+    assert if_route.admit_if_model_response(prepared, response(prepared, value)).reason_codes == ('analysis_if_conditional_route_incomplete',)
     for index, proposal in enumerate(value['scenarios']):
         proposal['label'] = alternatives[index]
-        proposal['nodes'][1].update(origin='USER_CHOICE', text=alternatives[index], source_refs=[index + 3])
+        proposal['nodes'][1].update(origin='USER_CHOICE', text=alternatives[index], source_refs=[index + 4])
         proposal['nodes'].insert(2, dict(node_id='next', step_kind='POSSIBLE_CHOICE', origin='SIMULATED_EXTENSION',
             text=f'仮に、方法{index + 1}で次の予定を確かめる。', anchor_ref=None, source_refs=[], unknown_reasons=[]))
         proposal['edges'][1].update(to='next', condition_refs=['c1'])
@@ -325,6 +331,9 @@ def test_analyzed_branch_keeps_person_alternatives_and_requires_a_conditional_ne
     shown = if_route.from_storage(stored, authenticated_owner_scope=OWNER).safe_projection(authenticated_owner_scope=OWNER)
     assert tuple(proposal['nodes'][1]['visible_label'] for proposal in shown['scenarios']) == alternatives
     assert all(proposal['edges'][1]['visible_condition_labels'] for proposal in shown['scenarios'])
+    assert all(tuple(proposal['required_conditions']) == constraints for proposal in shown['scenarios'])
+    value['scenarios'][1]['required_conditions'].pop()
+    assert if_route.admit_if_model_response(prepared, response(prepared, value)).reason_codes == ('analysis_if_model_constraint_unbound',)
 
 
 def test_rehashed_legacy_partial_user_choice_is_also_rejected_on_saved_read():

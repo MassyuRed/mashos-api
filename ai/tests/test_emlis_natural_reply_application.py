@@ -1571,6 +1571,14 @@ def test_first_unanswered_skip_only_passes_current_input(natural_case, qdb, monk
     assert final_material['past_user_records'] == final_material['user_frame_feedback'] == []
     assert past_memo not in (calls[1].writer_material_json or '')
     assert run(service.get(user, parent)) == final
+    if tier != 'free':
+        qdb.query('delete from public.emotions where id=$1', [past])
+        reread = run(service.get(user, parent))
+        assert reread['current_observation'] == final['current_observation']
+        assert [e['event_id'] for e in reread['timeline'] if e['kind'] == 'OBSERVATION'] == [
+            final['current_observation']['event_id']]
+        qdb.query("update public.profiles set subscription_tier='free' where id=$1", [user])
+        assert run(service.get(user, parent))['current_observation'] == final['current_observation']
     assert len(calls) == 2
 
 
