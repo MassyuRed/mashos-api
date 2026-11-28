@@ -47,7 +47,6 @@ jobs:
           node-version: '24'
       - name: Install PostgreSQL WASM test dependency
         run: npm install --prefix "$RUNNER_TEMP/analysis-postgres" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
-      - name: Verify cumulative API, Q3 saved sources and existing job entrypoints
       - name: Verify the Map and DeepInsight regressions
         env:
           Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
