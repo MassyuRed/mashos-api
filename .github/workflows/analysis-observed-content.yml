@@ -18,7 +18,7 @@ jobs:
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
       PYTHONDONTWRITEBYTECODE: '1'
-      PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests
+      PYTHONPATH: .:ai/services:ai/services/ai_inference:ai/tests:ai/tests/piece_v2
     steps:
       - name: Check out the triggering commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -41,9 +41,20 @@ jobs:
           git rev-parse HEAD
           python --version
           python -m pip freeze
+      - name: Set up Node for existing PostgreSQL test harness
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install PostgreSQL WASM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/analysis-postgres" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+      - name: Verify cumulative API, Q3 saved sources and existing job entrypoints
       - name: Verify the Map and DeepInsight regressions
+        env:
+          Q2_PGLITE_MODULE: ${{ runner.temp }}/analysis-postgres/node_modules/@electric-sql/pglite
         run: >-
           python -m pytest -q --tb=short -ra
           -p pytest_subtests.plugin -p pytest_asyncio.plugin -p no:cacheprovider -c /dev/null --rootdir=. --noconftest
           ai/tests/test_analysis_primary_structures.py
           ai/tests/test_deep_insight.py
+          ai/tests/test_analysis_deep_insight_handoff.py
+          ai/tests/piece_v2/test_piece_deep_insight_http_lifecycle.py
