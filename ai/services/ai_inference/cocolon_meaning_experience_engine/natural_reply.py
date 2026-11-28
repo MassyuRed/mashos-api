@@ -1563,36 +1563,39 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
 
 def _focused_reply_messages(writer):
     """Project ordinary authored sources without copying UI selection labels into prose."""
+    from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+
     if not isinstance(writer, dict) or not writer.get('records') or writer.get('user_frame_feedback'):
         return None
     if writer.get('source_context_version') not in (None, SOURCE_CONTEXT_VERSION, UNSPECIFIED_CONCERN_CONTEXT_VERSION):
         return None
     records = writer['records']
-    if any(record.get('source_updates') or record.get('conflicts') or record.get('annotations') for record in records):
+    if any(record.get(key) for record in records
+           for key in ('source_updates', 'conflicts', 'annotations', 'correction_targets')):
         return None
 
     def authored_fields(record):
-        fields = [{'source_role': field['source_role'], 'field_path': field['field_path'], 'text': field['text']}
+        answer_context = ('ai_question_context', 'authored_at')
+        fields = [{key: field[key] for key in ('source_role', 'field_path', 'text', *answer_context) if key in field}
                   for field in record.get('active_fields', ())]
-        pending = [{'source_role': source['source_role'], 'fields': source['fields'],
-                    **({'ai_question_context': source['ai_question_context']} if source.get('ai_question_context') else {})}
+        pending = [{key: source[key] for key in ('source_role', 'fields', *answer_context) if key in source}
                    for source in record.get('unresolved_sources', ())]
         return {'active_fields': fields, 'unresolved_sources': pending}
 
     current, *past = records
-    current_metadata = current['metadata']
+    selection = build_emlis_current_input_bundle(current['metadata'])
     answered_scene = writer.get('focused_answer_scene')
     current_source = authored_fields(current) if answered_scene is None else {'answered_scene': answered_scene}
-    selected = current_metadata.get('emotion_details', ())
-    self_insight = '自己理解' in current_metadata.get('emotions', ())
-    if any(current_source.values()):
-        strengths = {'weak': 1, 'medium': 2, 'strong': 3}
-        tone = max((strengths.get(feeling['strength'], 0) for feeling in selected), default=0)
-        if tone and not self_insight:
+    has_authored_source = any(current_source.values())
+    selected = [emotion for emotion in selection.emotions if emotion.type not in {'自己理解', 'SelfInsight'}]
+    if selected:
+        tone = selection.emotion_strength_summary.max_strength_score
+        if has_authored_source and tone:
             current_source['reply_tone_hint'] = tone
-    elif not self_insight:
-        current_source['selected_feelings'] = selected
-    current_source['category'] = current_metadata.get('category', ())
+        elif not has_authored_source:
+            current_source['selected_feelings'] = [{'type': feeling.type, 'strength': feeling.strength}
+                                                   for feeling in selected]
+    current_source['category'] = selection.categories
     result = {'current': current_source}
     if past:
         result['past_user_records'] = [{'recorded_at': record['metadata']['created_at'], **authored_fields(record)}
