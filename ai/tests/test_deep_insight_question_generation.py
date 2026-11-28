@@ -336,6 +336,34 @@ def test_reader_can_refuse_a_paraphrase_of_a_dismissed_emlis_question():
     assert len(calls) == 3 and "skipped_emlis_questions" in calls[2][0]
 
 
+@pytest.mark.parametrize("quote", ["話が途切れて、少し寂しかった", "少し寂しかった"])
+def test_records_do_not_ask_again_for_the_trigger_of_a_written_feeling(quote):
+    original = material(source("話が途切れて、少し寂しかった。"))
+    result, calls = run(original, ask(quote=quote))
+    assert result.candidate is None
+    assert result.plan_rejection_reason == "known_reason"
+    assert [system for system, _ in calls] == [PLAN_SYSTEM_MESSAGE]
+
+
+@pytest.mark.parametrize(("record", "quote"), [
+    ("話が途切れた。帰り道では少し寂しかった。", "帰り道では少し寂しかった"),
+    ("あの話題について、少し寂しかった。", "あの話題について、少し寂しかった"),
+])
+def test_records_can_ask_about_a_feeling_when_its_trigger_is_unstated(record, quote):
+    original = material(source(record))
+    result, _ = run(original, ask(quote=quote))
+    assert result.candidate.text == f"「{quote}」と書いていましたが、{BODY}"
+
+
+def test_records_can_ask_about_a_new_condition_in_the_same_scene():
+    original = material(source("話が途切れて、少し寂しかった。"))
+    quote = "話が途切れて、少し寂しかった"
+    question = "また話が途切れたとき、相手のどんな反応なら話を続けやすいですか？"
+    plan = ask(focus="CONDITION", quote=quote, ask="話が途切れた後に話を続けやすい相手の反応")
+    result, _ = run(original, plan, question)
+    assert result.candidate.text == f"「{quote}」と書いていましたが、{question}"
+
+
 def test_record_is_not_retained_if_its_dismissal_cannot_fit(monkeypatch):
     plain, _ = prepare_question_material(material(source()), lane="records", theme=None)
     cap = len(json.dumps(plain, ensure_ascii=False, separators=(",", ":")).encode())
@@ -1943,6 +1971,18 @@ def test_theme_preserves_a_new_scope_in_an_opening_about_asking_for_help():
     result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("asking_help", "priority"))
     assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
     assert calls[1][1]["body"] == draft
+
+
+@pytest.mark.parametrize("opening", [
+    "大切な話をメッセージにするか、直接伝えるか迷うときに",
+    "大切な話をメッセージで伝えるか、直接話すか迷ったとき",
+])
+def test_theme_does_not_repeat_the_choice_of_contact_channel(opening):
+    choose = select_theme_angle("contact_channel", "priority")
+    body = "どちらにするかは、何を決め手にしますか？"
+    result, calls = theme_run("人間関係", f"{opening}、{body}", choose_theme=choose)
+    assert calls[1][1]["body"] == body
+    assert result.candidate.text == f"大切な話をメッセージにするか直接伝えるか迷ったとき、{body}"
 
 
 def test_theme_checks_repeat_against_the_displayed_text_after_removing_an_opening():

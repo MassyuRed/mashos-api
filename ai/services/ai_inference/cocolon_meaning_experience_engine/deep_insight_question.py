@@ -38,6 +38,7 @@ _THEME_QUOTED_QUESTION = re.compile(r"「([^「」\r\n]+)」")
 _THEME_SINGLE_QUOTED_QUESTION = re.compile(r"\{[ \t]*'question'[ \t]*:[ \t]*'([^'\r\n]+)'[ \t]*\}")
 _THEME_PLAIN_QUESTION = re.compile(r"[ぁ-んァ-ヶ一-龯][^\r\n{}「」\"'：:]*[？?]")
 _THEME_SCENE_COMMA = re.compile(r"[、,，]")
+_THEME_HESITATION_END = re.compile(r"(?:迷う|迷った|迷っている)(?:とき|時|場合|際|場面)(?:に|は|で)?\Z")
 _THEME_ASSISTANT_NAME = re.compile(r"emlis|エムリス", re.IGNORECASE)
 _THEME_MAX_PAIR_RECHECKS = 6
 _THEME_HISTORY_BATCH_SIZE = 32
@@ -89,6 +90,12 @@ _CITATION_JOIN = "」と書いていましたが、"
 _CONDITION_QUESTION = re.compile(r"どんな(?:とき|時|場合|条件|場面)|どういう(?:とき|場合|条件)")
 _STATED_REASON = re.compile(r"(?:した|いた|った|だった|くて|なので|なくて)(?:ので|から)|だったため|するため|のため")
 _RECORD_SENTENCE = re.compile(r"[^。！？!?\n\r]+")
+_FEELING_IN_SAME_EVENT = re.compile(
+    r"(?:て|[んい]で)(?<!そして)(?<!そうして)(?<!について)(?<!に関して)[、,，]\s*(?P<feeling>"
+    r"(?:(?:少し|ちょっと|とても|かなり|すごく|本当に|なんだか|やや)\s*)?"
+    r"(?:寂し[いか]|さびし[いか]|悲し[いか]|嬉し[いか]|うれし[いか]|悔し[いか]|怖[いか]|"
+    r"心細[いか]|つら[いか]|辛[いか]|不安(?:だ|に|を)|ほっと(?:し|して)|安心(?:し|して))[^、,，]*)"
+)
 _PENDING_ACTION = re.compile(
     r"まだ[^、,]*(?:途中|未着手|終わっていな|済んでいな)|やりかけ|"
     r"(?:作業|対応|準備|用事|仕事|勉強)[^、,]*(?:が残って|は残って)"
@@ -195,6 +202,7 @@ PLAN_SYSTEM_MESSAGE = f"""Emlisの「わたしを知る問い」で、本人に�
 記録の入口では、同じ場面について思考・行動・有効な本人回答を照合し、まだ本人が説明していない観点を一つ選びます。
 既に書いた理由、別表現の既出質問、スキップしたEmlisの問いを繰り返しません。理由が確認済みでも別の条件が有用ならCONDITIONにします。
 「〜ので、〜した」では、前半は本人が記した後半の理由です。その理由や、文中の相手がなぜそうしたかは尋ねません。本人に新しく確かめる点がなければskipです。
+「話が途切れて、少し寂しかった」のように本人が同じ文で出来事と気持ちをつないだ場合、その気持ちの理由をもう一度聞きません。もし本人がすでに述べたこととは別に、同じ場面での具体的な選択や条件が確かめられるなら、その対象をaskに明記します。
 記録のsourceはsourcesに実在するキーを一字ずつ写します。キーがa1ならa1です。キーにtext、sources、配列番号などを足しません。
 quoteはそのキーのtextに一度だけ現れる連続した6〜70文字です。理由と行動をまとめず、確認する行動・判断・状態を含む箇所を選び、文末の「。」「！」「？」と空白は含めません。別人の意図・過去の事実を推定しません。
 テーマの入口では、選択したテーマ内で、自分の基準や捉え方が分かる一点を選びます。関連記録がなくても生成し、sourceとquoteは空文字です。
@@ -612,7 +620,13 @@ def _stated_reason(anchor):
     text = anchor.source.text
     prefix = re.split(r"[。！？!?\n\r]", text[:anchor.start])[-1]
     suffix = re.split(r"[。！？!?\n\r]", text[anchor.end:])[0]
-    return bool(_STATED_REASON.search(prefix + anchor.quote) or _REASON_FINISH.search(suffix.strip()))
+    if _STATED_REASON.search(prefix + anchor.quote) or _REASON_FINISH.search(suffix.strip()):
+        return True
+    # A reason-only follow-up has no new target when this feeling is already
+    # written as part of the preceding event in the same sentence.
+    start, end = len(prefix), len(prefix) + len(anchor.quote)
+    return any(start < match.end("feeling") and match.start("feeling") < end
+               for match in _FEELING_IN_SAME_EVENT.finditer(prefix + anchor.quote + suffix))
 
 
 def _foreign_reason_anchor(anchor):
@@ -1284,10 +1298,13 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
 
 
 def _without_repeated_introduction(body, scene, repeated_introductions):
-    openings = {_THEME_SCENE_COMMA.sub("", text) for text in (scene, *repeated_introductions)}
+    def opening_key(text):
+        return _THEME_HESITATION_END.sub("迷うとき", _normal(text))
+
+    openings = {opening_key(text) for text in (scene, *repeated_introductions)}
     while True:
         for comma in _THEME_SCENE_COMMA.finditer(body):
-            if _THEME_SCENE_COMMA.sub("", body[:comma.start()]) in openings:
+            if opening_key(body[:comma.start()]) in openings:
                 body = body[comma.end():].lstrip()
                 break
         else:

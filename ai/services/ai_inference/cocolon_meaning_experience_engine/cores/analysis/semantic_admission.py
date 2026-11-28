@@ -3685,12 +3685,13 @@ def _choice_from_origin(origin, sentences, *, allow_written_negative=False):
     return None
 
 
-def _choice_pairs(origins, sentences, *, allow_written_negative=False):
+def _choice_pairs(origins, sentences, *, allow_written_negative=False, allow_same_action=False):
     choices = [(origin[2]['record'], choice) for origin in origins
                if (choice := _choice_from_origin(origin, sentences, allow_written_negative=allow_written_negative)) is not None]
     for i, (record, left) in enumerate(choices):
         for other, right in choices[i + 1:]:
-            if record != other and left[0] != right[0] and left[1] != right[1]:
+            if (record != other and left[0] != right[0]
+                    and (allow_same_action or left[1] != right[1])):
                 yield left, right
 
 
@@ -3765,7 +3766,7 @@ def _v3_decision_edges(edges, material, nodes):
             if (all(claim in first[3] or claim in second[3]
                     for claim in _PRIMARY_STRUCTURE_STRONG_CLAIM.findall(edge['label']))
                     and any(_choice_comparison_covers(edge['label'], left, right)
-                            for left, right in _choice_pairs((first, second), sentences))):
+                            for left, right in _choice_pairs((first, second), sentences, allow_same_action=True))):
                 retained.append(edge)
                 break
     return retained
@@ -3800,7 +3801,7 @@ def _v3_source_contrast_edge(material, nodes, axes, edges):
     origins = _v3_source_contrast_origins(material, nodes)
     if origins is None:
         return None
-    pair = next(_choice_pairs(origins, _semantic_display_sentences(material)), None)
+    pair = next(_choice_pairs(origins, _semantic_display_sentences(material), allow_same_action=True), None)
     if pair is None:
         return None
     return _v3_choice_contrast_edge(refs, pair, edges)
@@ -3828,7 +3829,7 @@ def _v3_merge_choice_contrast_edges(material, nodes, bindings, edges):
         supported = []
         for left, right in combinations(axis['anchors'], 2):
             first, second = origins[left], origins[right]
-            pair = next(_choice_pairs((first, second), sentences), None)
+            pair = next(_choice_pairs((first, second), sentences, allow_same_action=True), None)
             if pair is not None and _choice_comparison_covers(axis['case_reading'], *pair):
                 supported.append((left, right, pair))
         if len(supported) != 1:
@@ -4215,7 +4216,8 @@ def _read_primary_structures(prepared, material, nodes, axes, *, retained=None, 
             continue
         _semantic_map_require(bool(mental), reason)
         if axis['scope'] == 'across_records' and independently_compared:
-            decisions = tuple(_choice_pairs(selected, sentences, allow_written_negative=allow_written_negative))
+            decisions = tuple(_choice_pairs(selected, sentences, allow_written_negative=allow_written_negative,
+                                            allow_same_action=True))
             if not decisions:
                 continue
         elif axis['scope'] == 'across_records':

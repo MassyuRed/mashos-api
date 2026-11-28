@@ -51,6 +51,23 @@ def v3_reading():
                 heading='引き受ける前のひと言')
 
 
+def test_same_observed_action_can_have_two_bound_reasons():
+    first = '自分で準備できたので、私は資料確認を引き受けた。'
+    second = '相手が困っていたので、私は資料確認を引き受けた。'
+    p, plan, bodies = scenario(first, second, version='karen.v3')
+    material = json.loads(p.material_json)
+    nodes = core._semantic_v4_join(plan, bodies)
+    axis = dict(anchors=['n1.u1.e1', 'n2.u1.e1'], scope='across_records', decision_factor='引き受ける理由',
+        criterion='同じ資料確認でも、引き受ける理由は場面ごとに違っています。',
+        case_reading='引き受ける理由が自分で準備できたことだった日も、相手が困っていた日も、資料確認を引き受けました。',
+        heading='同じ手伝いを選んだ二つの場面')
+    # The authored contrast must pair each source condition with its own action.
+    assert core._read_primary_structures(p, material, nodes, [axis]) == []
+    axis['case_reading'] = ('自分で準備できたときは資料確認を引き受けました。'
+                            '相手が困っていたときも資料確認を引き受け、引き受ける理由が異なっています。')
+    assert core._read_primary_structures(p, material, nodes, [axis])[0]['criterion'] == axis['criterion']
+
+
 def observed_v2_repeated_conclusion():
     # The complete, authored axis from the second fictional RELATIONS run.
     return dict(anchors=['n1.u1.e1', 'n2.u1.e1'], scope='across_records',

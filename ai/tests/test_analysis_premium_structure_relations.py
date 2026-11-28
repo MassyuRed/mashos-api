@@ -364,11 +364,13 @@ def test_saved_map_eligibility_is_shared_by_history_detail_if_deep_insight_and_p
     month = db.query('select snapshot_month::text as month from public.analysis_cumulative_months')['rows'][0]['month']
     sql_script(db, '20261125205000_analysis_premium_structure_relations.sql')
     sql_script(db, '20261127080000_analysis_withhold_unaccepted_map.sql')
+    sql_script(db, '20261128053557_analysis_cumulative_retained_read.sql')
     for function in (
         'analysis_cumulative_has_accepted_reading(jsonb,jsonb)',
         'analysis_cumulative_current_id(uuid,text)',
         'analysis_cumulative_commit(uuid,text,text,jsonb,jsonb,text,timestamptz,timestamptz,uuid,boolean)',
         'analysis_cumulative_read(uuid,uuid,boolean,integer,integer,date,boolean)',
+        'analysis_cumulative_retained_read(uuid,boolean)',
         'analysis_if_base_context(uuid,text)',
     ):
         acl = db.query("select has_function_privilege('anon',$1,'execute') anon, "
@@ -539,3 +541,31 @@ def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(sa
     assert changed['code'] == '55000'
     still_saved, = asyncio.run(service.read_maps(OWNER, limit=1))['items']
     assert still_saved['id'] == rid and still_saved['content_json']['structure_relations'] == expected
+
+
+def test_previous_map_survives_an_append_only_while_its_sources_are_unchanged(saved_map_source):
+    db, rpc, other, originals, snapshot = saved_map_source
+    sql_script(db, '20261127080000_analysis_withhold_unaccepted_map.sql')
+    sql_script(db, '20261128053557_analysis_cumulative_retained_read.sql')
+    artifact, coverage, _ = _artifact(COEXISTENCE, snapshot)
+    private = artifact.private_evidence()
+    private.update(coverage=coverage, source_record_refs=[source['id'] for source in originals])
+    rid = asyncio.run(rpc('analysis_cumulative_commit', dict(p_user_id=OWNER, p_guard=snapshot['guard'],
+        p_artifact_id=artifact.artifact_id, p_private_evidence=private, p_projection=artifact.safe_projection(authenticated_owner_scope=OWNER),
+        p_text=artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+        p_start=snapshot['period_start'], p_end=snapshot['period_end'])))
+    assert not asyncio.run(service.read_maps(OWNER, retained=True))['items']
+    extra = str(UUID(int=300))
+    assert 'code' not in db.query('insert into public.emotions values ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [extra, OWNER, '2026-11-16T12:30:00', '帰宅した。', '', ['日常'], ['平穏'], '[]'])
+    assert not asyncio.run(service.read_maps(OWNER, limit=1))['items']
+    retained = asyncio.run(service.ensure_map(OWNER, ensure=False))
+    assert retained['reason'] == service.PREVIOUS_MAP_RETAINED and retained['report_id'] == rid
+    assert not asyncio.run(service.read_maps(other, retained=True))['items']
+    assert 'code' not in db.query("update public.profiles set subscription_tier='premium' where id=$1", [OWNER])
+    with pytest.raises(HTTPException, match='P0002'):
+        asyncio.run(rpc('analysis_if_base_context', dict(p_user_id=OWNER, p_base_ref=artifact.reference)))
+    public = db.query('select public.analysis_cumulative_retained_read($1)', [OWNER], 'authenticated')
+    assert public['code'] == '42501'
+    assert 'code' not in db.query('delete from public.emotions where id=$1', [originals[0]['id']])
+    assert not asyncio.run(service.read_maps(OWNER, retained=True))['items']

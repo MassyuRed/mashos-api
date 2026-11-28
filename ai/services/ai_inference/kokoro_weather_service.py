@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
+from hashlib import sha256
+import json
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from supabase_client import sb_get
@@ -588,9 +590,15 @@ async def build_live_kokoro_weather(
     read_start = max(start.astimezone(timezone.utc), history_start_utc) if history_start_utc else start.astimezone(timezone.utc)
     if read_start >= end or read_start > now:
         raise PermissionError("outside history retention")
+    rows = await _fetch_live_kokoro_rows(user_id, start=read_start, end=end, now=now)
+    return build_live_kokoro_weather_from_rows(rows, period=period, anchor=anchor,
+        now_utc=now, history_start_utc=history_start_utc)
+
+
+async def _fetch_live_kokoro_rows(user_id: str, *, start: datetime, end: datetime, now: datetime):
     rows, cursor = [], None
     while True:
-        clauses = [f"created_at.gte.{_iso_z(read_start)}", f"created_at.lte.{_iso_z(now)}", f"created_at.lt.{_iso_z(end)}", "is_secret.eq.false"]
+        clauses = [f"created_at.gte.{_iso_z(start)}", f"created_at.lte.{_iso_z(now)}", f"created_at.lt.{_iso_z(end)}", "is_secret.eq.false"]
         if cursor:
             clauses.append(f"or(created_at.gt.{cursor[0]},and(created_at.eq.{cursor[0]},id.gt.{cursor[1]}))")
         response = await sb_get("/rest/v1/emotions", params={
@@ -618,7 +626,34 @@ async def build_live_kokoro_weather(
         ) <= (_parse_iso_utc(cursor[0]), str(cursor[1]))):
             raise RuntimeError("invalid_kokoro_weather_cursor")
         cursor = next_cursor
-    return build_live_kokoro_weather_from_rows(rows, period=period, anchor=anchor, now_utc=now, history_start_utc=history_start_utc)
+    return rows
+
+
+async def build_prior_kokoro_observation(user_id: str, before: datetime):
+    """Return dated chart facts and their exact supporting record commitment."""
+    as_of = before.astimezone(JST)
+    start = datetime.combine(as_of.date() - 6 * DAY, datetime.min.time(), JST)
+    rows = await _fetch_live_kokoro_rows(user_id, start=start, end=before, now=before)
+    days, sources = {}, []
+    for row in rows:
+        recorded_at = _parse_iso_utc(row.get('created_at'))
+        if row.get('is_secret') is not False or not recorded_at or not start <= recorded_at < before:
+            continue
+        weights = _row_emotion_weights(row)
+        if not any(weights.values()):
+            continue
+        sources.append([row['id'], _iso_z(recorded_at), weights])
+        days.setdefault(recorded_at.astimezone(JST).date().isoformat(), []).append(row)
+    if not sources:
+        return None
+    chart = []
+    for day, records in sorted(days.items()):
+        aggregate = _live_aggregate(records)
+        chart.append({'jst_date': day, 'record_count': aggregate['input_count'],
+            'recorded_emotion_weights': {KEY_TO_JP[key]: value
+                                         for key, value in aggregate['emotion_weights'].items() if value}})
+    guard = sha256(json.dumps(sources, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+    return {'as_of_jst': _iso_jst(as_of), 'recorded_days': chart}, guard
 
 
 # -----------------------------------------------------------------------------

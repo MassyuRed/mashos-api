@@ -16,7 +16,8 @@ from piece_v2_preview_service import (
     _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage,
 )
 from piece_v2_store import _preview_content, save_piece, save_request_arguments
-from piece_v2_visual import build_selected_visual_recipe, require_piece_visual_selection, visual_selection_from_recipe
+from piece_v2_visual import (EXPANDED_PALETTE_RENDERERS, build_selected_visual_recipe,
+                            require_piece_visual_selection, visual_selection_from_recipe)
 
 SAVE_STATUS = {
     'PIECE_REQUEST_INVALID': 400, 'PIECE_AUTH_REQUIRED': 401,
@@ -133,7 +134,7 @@ class PieceSaveService:
             except PieceContractError:
                 _fail('PIECE_HASH_MISMATCH')
             selection = visual_selection_from_recipe(row['visual_recipe'])
-            capable_renderer = row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+            capable_renderer = row['renderer_version'] in EXPANDED_PALETTE_RENDERERS
             require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
                                            visual_editor=visual_editor and capable_renderer,
                                            visual_alignment=visual_alignment and capable_renderer,

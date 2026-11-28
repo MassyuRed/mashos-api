@@ -740,6 +740,25 @@ BRANCH_INTENTは比較したい意向であり、それ自体を各案のUSER_CH
 UNKNOWNは、その案で実際に理解できる範囲や生じる結果が未観測であることを表します。将来の結果を「本人が成果を書いていない」という記録不足へ読み替えず、その案の行動に即して説明します。'''
 
 
+_IF_MODEL_INSTRUCTION_CONDITIONAL = _IF_MODEL_INSTRUCTION_LEGACY + '''
+branch_contextは本人の保存マップから、この分岐に関係する選び方・場面だけを取り出した参照資料です。マップの読みを本人が今回選択・実行したことに置き換えません。記録上の条件と本人が今回書いた制約を区別します。
+各案は、渡された全ての起点、案の最初の行動、条件が成り立った場合に次に取れる具体的な行動、結果や条件がまだ分からない点の順で辿れる図にします。最初の行動から次の行動への線に、その場で確かめられる条件をcondition_refsで付けます。条件の違いで別の行動を考えられる場合は分岐を示します。不明な条件の成立、相手の反応、負担や結果を断定しません。具体的な仮の手順を作る材料が足りなければclarificationを返します。
+番号つきのPERSON_ALTERNATIVEが案の数だけ渡された場合は、一案につき対応する本人案の全文をUSER_CHOICEに置きます。その次に加える行動はSIMULATED_EXTENSIONです。PERSON_ALTERNATIVEがなければ、最初の行動もSIMULATED_EXTENSIONです。BRANCH_INTENTやCONSTRAINTを本人案にしません。本人が書いた必要条件は、適用する案のrequired_conditionsに全文とfield番号を残します。'''
+
+
+def _conditional_branch_context(projection, anchors):
+    refs = {anchor['node_ref'] for anchor in anchors}
+    structures = [dict(criterion=axis.get('criterion', axis['description']), description=axis['description'])
+                  for axis in projection['overview'].get('primary_structures', ())
+                  if refs.intersection(axis['node_refs'])]
+    if not structures:
+        return None
+    return dict(primary_structures=structures, scenes=[
+        dict(node_ref=node['node_ref'], summary=node['summary'], explanation=node['explanation'],
+             context=node['context'][:4], unknowns=node['unknowns'])
+        for node in projection['nodes'] if node['node_ref'] in refs])
+
+
 def prepare_if_model_request(request, *, response=None):
     """Freeze owned material before the application makes one model request."""
     try:
@@ -797,13 +816,20 @@ def prepare_if_model_request(request, *, response=None):
             from .semantic_admission import AnalysisModelQuotedParentUnitsResponse
             _require(type(response) is AnalysisModelQuotedParentUnitsResponse,
                      'analysis_if_model_response_unbound')
-        for instruction in (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_STANDARD,
+        branch_context = (_conditional_branch_context(projection, anchors)
+                          if projection['wire_kind'] == 'watashi.map.v3' else None)
+        instructions = (_IF_MODEL_INSTRUCTION, _IF_MODEL_INSTRUCTION_STANDARD,
                             _IF_MODEL_INSTRUCTION_FIXED_PERSON,
                             _IF_MODEL_INSTRUCTION_PERSON_OPTIONS,
                             _IF_MODEL_INSTRUCTION_UNKNOWN_ORDER,
                             _IF_MODEL_INSTRUCTION_PERSON_ALTERNATIVES,
-                            _IF_MODEL_INSTRUCTION_LEGACY):
-            messages = [dict(role='system', content=instruction), dict(role='user', content=_json(material))]
+                            _IF_MODEL_INSTRUCTION_LEGACY)
+        if branch_context is not None:
+            instructions = (_IF_MODEL_INSTRUCTION_CONDITIONAL, *instructions)
+        for instruction in instructions:
+            model_material = (dict(material, branch_context=branch_context)
+                              if instruction == _IF_MODEL_INSTRUCTION_CONDITIONAL else material)
+            messages = [dict(role='system', content=instruction), dict(role='user', content=_json(model_material))]
             request_ref = 'analysis-if-request:' + commitment([asdict(request), seed, messages])[7:]
             if response is None or (response.request_ref == request_ref
                     and response.messages_sha256 == commitment(messages)[7:]):
@@ -868,6 +894,9 @@ def _realize_model_set(prepared, response, packet):
     artifact_id, set_id = 'artifact:' + suffix[:32], 'scenario-set:' + suffix
     scenarios, graphs, shown = [], [], []
     ids, labels = set(), set()
+    conditional = prepared.messages()[0]['content'] == _IF_MODEL_INSTRUCTION_CONDITIONAL
+    authored_choices = {_source_ref(_source(choice, request.authenticated_owner_scope))
+                        for choice in request.scenario_choices} if conditional else set()
     for proposal in packet['scenarios']:
         _require(_keys(proposal, 'scenario_id label nodes edges required_conditions frictions unmodelled_factors'),
                  'analysis_if_model_packet_invalid')
@@ -938,6 +967,8 @@ def _realize_model_set(prepared, response, packet):
             by_condition = {row['condition_id']: row['text'] for row in proposal['required_conditions']}
             visible_edges.append(dict(edge_ref=edge['edge_id'], from_ref=edge['from'], to_ref=edge['to'],
                 visible_condition_labels=[by_condition[ref] for ref in edge['condition_refs']]))
+        if conditional:
+            _check_conditional_scenario(proposal, anchors, source_refs, authored_choices)
         factors = [_model_surface(text) for text in proposal['unmodelled_factors']]
         frictions = [_model_surface(text) for text in proposal['frictions']]
         graph = dict(scenario_graph_id=graph_id, scenario_graph_version=1,
@@ -956,6 +987,7 @@ def _realize_model_set(prepared, response, packet):
         shown.append(dict(scenario_ref=scenario_ref, branch_point_ref=request.branch_point_id, visible_label=label,
             nodes=visible_nodes, edges=visible_edges, required_conditions=conditions, frictions=frictions,
             unmodelled_factors=factors))
+    _require(not authored_choices, 'analysis_if_model_choice_unbound')
     primary = dict(kind=IF_KIND, wire_kind='watashi.if-route-set.v1', candidate_set_id=set_id,
         base_observed_map_ref=request.base_observed_map_ref, base_route_ref=request.base_route_ref,
         scenarios=scenarios, display_order=[scenario['scenario_artifact_ref'] for scenario in scenarios],
@@ -974,6 +1006,39 @@ def _realize_model_set(prepared, response, packet):
     _validate_storage(payload, request.authenticated_owner_scope)
     return AnalysisIfRouteOutcome(EngineStatus.GENERATED, ('analysis_if_model_set_generated',),
                                  AnalysisIfArtifact(_json(payload)))
+
+
+def _check_conditional_scenario(proposal, anchors, source_refs, remaining_choices):
+    nodes = {node['node_id']: node for node in proposal['nodes']}
+    starts = {node_id: node['anchor_ref'] for node_id, node in nodes.items()
+              if node['origin'] == 'OBSERVED_ANCHOR'}
+    _require(set(starts.values()) == set(anchors) and len(starts) == len(anchors),
+             'analysis_if_model_anchor_unbound')
+    order = {node_id: index for index, node_id in enumerate(nodes)}
+    outgoing = {node_id: [] for node_id in nodes}
+    for edge in proposal['edges']:
+        origin, target = edge['from'], edge['to']
+        _require(nodes[origin]['origin'] != 'UNKNOWN' and order[origin] < order[target] and target not in starts,
+                 'analysis_if_conditional_route_incomplete')
+        outgoing[origin].append(edge)
+    first_steps = {edge['to'] for start in starts for edge in outgoing[start]}
+    _require(len(first_steps) == 1 and all(outgoing[start] for start in starts),
+             'analysis_if_conditional_route_incomplete')
+    first = next(iter(first_steps))
+    for node_id, node in nodes.items():
+        if node['origin'] == 'USER_CHOICE':
+            ref = source_refs[node['source_refs'][0]]
+            _require(node_id == first and ref in remaining_choices and proposal['label'] == node['text'],
+                     'analysis_if_model_choice_unbound')
+            remaining_choices.remove(ref)
+    _require(nodes[first]['origin'] in {'USER_CHOICE', 'SIMULATED_EXTENSION'} and any(
+        edge['condition_refs'] and nodes[edge['to']]['origin'] == 'SIMULATED_EXTENSION'
+        for edge in outgoing[first]), 'analysis_if_conditional_route_incomplete')
+    reachable = set(starts)
+    for node_id, node in nodes.items():
+        _require(node_id in reachable and (node['origin'] == 'UNKNOWN' or outgoing[node_id]),
+                 'analysis_if_conditional_route_incomplete')
+        reachable.update(edge['to'] for edge in outgoing[node_id])
 
 
 def _model_source_numbers(numbers, refs):

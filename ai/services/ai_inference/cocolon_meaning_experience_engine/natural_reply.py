@@ -45,9 +45,15 @@ DIRECT_FEELING_CORRECTION_CONTEXT_VERSIONS = frozenset({
     DIRECT_FEELING_CORRECTION_RECIPIENT_CONTEXT_VERSION, DIRECT_FEELING_CORRECTION_CONTEXT_VERSION})
 REQUEST_SECONDS = 240
 ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
-RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v1"
+PREVIOUS_RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v1"
+RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v2"
 _RECIPIENT_VOICE_MESSAGE = """
 話し手はEmlis、聞き手は記録を書いた本人です。自分を示す必要がある箇所では「Emlisも」「Emlisには」のように文の一部にし、冒頭や文頭で「Emlis、」と相手を呼ぶ形にしません。記録を説明し直す前置きは省き、今その人に伝えたいことから自然に話します。"""
+_RECIPIENT_VOICE_GROUNDING_MESSAGE = """
+記録した本人が自分でしたと書いた行動は、本人に直接返してください。「〜したそうです」と伝聞にするのは、本人が別の人から聞いたと書いた内容に限ります。
+出来事と気持ちを並べて書いたことや、同じ日に記録されたことだけで、「それが原因で」「その結果」と因果を結ばないでください。原文では起きた時と振り返った時が違う場合は、その時点を保ちます。
+選択された強度は言葉の温度に反映し、弱・中・強を読み上げません。「少し好きだった」「大好きだった」など本人が明記した強弱と時制は保ちます。
+本人にとって大事な一点を短く受け止め、その一点を聞いてEmlisが本人に伝えたい言葉を返します。「という記録ですね」「記録を受け取りました」という報告だけで終えず、助言や原文にない理由を足さずに応じてください。"""
 _RECIPIENT_HISTORY_MESSAGE = """
 別々の記録にあった気持ちや場面を、本人が結び付けて書いた根拠がある場合にだけ一つの理由・経過として語ります。時間が近いことや似た話題だけを根拠に、以前の状態が今も続く、片方がもう片方を引き起こしたと推測しません。関連がはっきりしなければ、今回の記録に応じます。"""
 logger = logging.getLogger(__name__)
@@ -1420,7 +1426,8 @@ def validate_reply(reply, request, *, check_initial_availability=False):
         raise _NaturalReplyValidationError("question_ending")
     if any(ord(x) < 32 and x not in "\n\t\r" for x in reply.text):
         raise _NaturalReplyValidationError("control_character")
-    if request.recipient_voice_version and request.recipient_voice_version == RECIPIENT_VOICE_VERSION:
+    if request.recipient_voice_version and request.recipient_voice_version in (
+            PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION):
         addressed = repair_emlis_reply_address(reply.text, recipient_call=request.recipient_display_name_call)
         if not addressed:
             raise _NaturalReplyValidationError("empty_reply")
@@ -1465,7 +1472,8 @@ def validate_reply(reply, request, *, check_initial_availability=False):
 
 def build_natural_reply_messages(request, *, correction_target_context=False):
     messages = _build_natural_reply_messages(request, correction_target_context=correction_target_context)
-    if not request.recipient_voice_version or request.recipient_voice_version != RECIPIENT_VOICE_VERSION:
+    if not request.recipient_voice_version or request.recipient_voice_version not in (
+            PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION):
         return messages
     messages[0]["content"] += _RECIPIENT_VOICE_MESSAGE
     if request.recipient_display_name_call:
@@ -1476,11 +1484,27 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         writer_material = json.loads(messages[1]["content"])
     except json.JSONDecodeError:
         return messages
+    if (request.recipient_voice_version == RECIPIENT_VOICE_VERSION and isinstance(writer_material, dict)
+            and ('current' in writer_material or 'records' in writer_material)
+            and not any(key in writer_material for key in ('本人が訂正した気持ち', '今回の本人の言葉'))):
+        messages[0]['content'] += _RECIPIENT_VOICE_GROUNDING_MESSAGE
     if (isinstance(writer_material, dict) and (writer_material.get("past_user_records")
             or any(isinstance(record, dict) and record.get("scope") == "PAST_RECORD"
                    for record in writer_material.get("records") or ()))):
         messages[0]["content"] += _RECIPIENT_HISTORY_MESSAGE
     return messages
+
+
+def with_premium_reply_context(request, context):
+    """Add derived prior context only to ordinary conversational writers."""
+    if not request.writer_material_json or not context:
+        return request
+    writer = json.loads(request.writer_material_json)
+    if (writer.get('source_context_version') not in (None, SOURCE_CONTEXT_VERSION)
+            or 'bound_feeling_dialogue' in writer):
+        return request
+    writer['prior_premium_context'] = context
+    return replace(request, writer_material_json=_compact_json(writer))
 
 
 def _build_natural_reply_messages(request, *, correction_target_context=False):
@@ -1589,6 +1613,17 @@ def _build_natural_reply_messages(request, *, correction_target_context=False):
             message += '\n本人が具体的に書いていない不安の対象や、解決した問題の中身は未確認です。カテゴリや別欄の行動から具体例を足さず、今回の原文と本人の回答にある範囲を短く受け取ってください。'
         if context_version == CORRECTED_SOURCE_CONTEXT_VERSION:
             message += '\n本人が訂正した気持ちと、別に答えた出来事をそれぞれの有効な原文から受け取ってください。訂正前のつながりを引き継いだり、新たな理由や順番を決めたりしないでください。'
+        if 'prior_premium_context' in writer:
+            message += ('\nprior_premium_contextは今回より前の本人資料です。今の話に結び付き、返す言葉が具体的になる場合にだけ使います。'
+                        'watashi_mapは以前の記録からの読み取りです。今回に通じる選び方の条件を考える手がかりで、'
+                        '本人の発言や性格の断定には使いません。今回の本人の言葉を優先します。'
+                        'kokoro_graphは日付ごとに記録された感情の集計で、生活の時間配分、今の理由、改善や悪化を示しません。'
+                        '数字や資料名を読み上げず、関係のある記録日と気持ちを本人への一言につなげてください。')
+            if 'deep_insight_answer' in writer['prior_premium_context']:
+                message += ('\ndeep_insight_answer.answerは以前の同じ話題で本人が答えた言葉です。'
+                            'recorded_atは元の記録、answered_atは回答の時点、ai_question_contextはAIの問いです。'
+                            '回答で以前本人が明かした選び方が今回にも役立つときだけ使い、今回の理由や'
+                            '今も同じ選び方をしていると決めつけません。AIの問いを本人の発言や起きた事実に数えません。')
         message += """
 recordsのCURRENT_INPUTが今回、PAST_RECORDは別の過去記録です。active_fieldsの原文は現在有効で、source_dutiesは同じfield内の範囲に対応する主体・否定・時点・関係の読みです。本文へ自然に実現し、内部番号や分類の説明をしないでください。
 source_updatesのtarget_textは訂正・撤回された対象で、現在の事実へ戻しません。unassessed_source_rangesとunresolved_sourcesの本人原文も読み、未確定部分やunknownsを補わず、別の出来事を結び付けないでください。correction_targetsとuser_frame_feedbackのAI対象は本人判断の文脈で、本人が述べた事実ではありません。"""

@@ -35,6 +35,19 @@ from .piece_source import (
 
 _WRITTEN_ACCOUNT_END = re.compile(
     r'(?:です|ます|でした|ました|ません|だった|ない|なかった|かった|しい|た|だ)[。！？!?]$')
+# A written current state is complete on its own or after a written return
+# or arrival. Keep the whole clause as context without inferring a reason,
+# replacing the subject, or turning a selected emotion into a sentence.
+_WRITTEN_CALM_STATE = re.compile(
+    r'(?:[^。！？!?「」『』、，,\r\n]*(?:帰って|戻って|着いて)[、，,][ \t\u3000]*)?'
+    r'(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*)?'
+    r'(?:今は?[、，,]?[ \t\u3000]*)?落ち着いて(?:いる|います)[。！!]')
+_WRITTEN_MOOD_STATE = re.compile(
+    r'(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*)?'
+    r'(?:(?:今日|今朝|今)は?[、，,]?[ \t\u3000]*)?(?:なんだか|何だか)?'
+    r'気分が(?:良い|よい|いい|悪い)(?:です)?[。！!]')
+_WRITTEN_TENTATIVE_REASON = re.compile(
+    r'[^。！？!?「」『』\r\n]+(?:た|だ|ない)から(?:だろう|でしょう)[。！!]')
 # Finite inflections of the already-written reservation context. Keep these
 # local to literal retention: a polite negative is no less uncertain, and
 # 迷っている is complete without admitting arbitrary plain verb endings.
@@ -356,6 +369,11 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             or _PLAIN_SURU_ACCOUNT_END.search(node.value)
             or (saved is not None and _is_unpunctuated_account(node.value))
             for node in text_nodes)
+        written_state_account = saved is not None and (
+            all(_WRITTEN_CALM_STATE.fullmatch(node.value) or _WRITTEN_MOOD_STATE.fullmatch(node.value)
+                for node in text_nodes)
+            or (len(text_nodes) == 2 and _WRITTEN_MOOD_STATE.fullmatch(text_nodes[0].value)
+                and _WRITTEN_TENTATIVE_REASON.fullmatch(text_nodes[1].value)))
         self_insight_account = False
         literal_account = False
         scoped_action_account = False
@@ -424,7 +442,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # source words through the existing duty/author; this grants neither
         # a selected state, a wish nor declaration eligibility.
         from .piece_refined import supplemental_feeling_account, supplemental_complete_self_account
-        if not (meaning.bound_complete_clause or feeling_account or self_insight_account or literal_account
+        if not (meaning.bound_complete_clause or feeling_account or written_state_account
+                or self_insight_account or literal_account
                 or scoped_action_account or past_self_account
                 or supplemental_feeling_account(meaning) or supplemental_complete_self_account(meaning)):
             raise unavailable('expression_meaning_not_admitted')
@@ -947,6 +966,8 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
 
 
 MODEL_REALIZATION_PROFILE = 'piece.cmee_realization.v2'
+MODEL_MEMO_SELECTION_PROFILE = 'piece.cmee_realization.v3'
+MODEL_REALIZATION_PROFILES = (MODEL_REALIZATION_PROFILE, MODEL_MEMO_SELECTION_PROFILE)
 
 
 def _model_realization_clauses(text):
@@ -1067,7 +1088,7 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
     artifact = PieceArtifact(body_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                              'short_essay', ('short_essay',))
     validate_piece_model_preservation(meaning, plan, artifact)
-    if realization_profile == MODEL_REALIZATION_PROFILE:
+    if realization_profile in MODEL_REALIZATION_PROFILES:
         blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, body_blocks)
         from .piece_refined import PieceRefinedMeaning, PieceCorrectedSourceSnapshot
         if (type(meaning) is PieceRefinedMeaning

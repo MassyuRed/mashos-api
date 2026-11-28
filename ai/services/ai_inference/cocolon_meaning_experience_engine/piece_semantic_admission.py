@@ -60,8 +60,26 @@ class PieceModelInputV1:
     receipt: CandidateReceipt
 
 
+def _piece_model_uses_memo_only(source, profile):
+    """For ordinary creation, keep the thought when both fields are written.
+
+    Action-only and explicitly selected answer/correction sources still use
+    their existing reading contracts. The original saved record stays bound
+    even though the action is unavailable as artwork material.
+    """
+    from .piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+    from piece_v2_generation import PieceSourceSnapshot
+
+    if (profile != MODEL_MEMO_SELECTION_PROFILE or type(source) is not PieceSourceSnapshot
+            or source.saved_original_json is None):
+        return False
+    record = json.loads(source.saved_original_json)
+    return isinstance(record, dict) and all(
+        isinstance(record.get(field), str) and record[field].strip() for field in ('memo', 'memo_action'))
+
+
 def prepare_piece_model_request(request, *, realization_profile=None):
-    from .piece_v1c import PieceGenerationRequest, MODEL_REALIZATION_PROFILE
+    from .piece_v1c import PieceGenerationRequest, MODEL_REALIZATION_PROFILES
     from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot
     from piece_v2_generation import PieceSourceSnapshot
     from .preparation import _prepare
@@ -79,11 +97,12 @@ def prepare_piece_model_request(request, *, realization_profile=None):
     if realization_profile is None:
         from piece_model_source import application_piece_realization_profile
         realization_profile = application_piece_realization_profile()
-    require(realization_profile in (None, MODEL_REALIZATION_PROFILE), 'piece_model_realization_profile')
+    require(realization_profile is None or realization_profile in MODEL_REALIZATION_PROFILES,
+            'piece_model_realization_profile')
     if realization_profile is None and request.requested_format not in (None, 'short_essay'):
         raise PieceSemanticUnsupported('piece_model_format_not_supported')
-    material = piece_model_material(request.source,
-        expected_owner_id=request.expected_owner_id, tier=request.tier)
+    material = piece_model_material(request.source, expected_owner_id=request.expected_owner_id,
+        tier=request.tier, original_memo_only=_piece_model_uses_memo_only(request.source, realization_profile))
     if realization_profile is not None:
         material['control']['realization_profile'] = realization_profile
         material['control']['requested_format'] = request.requested_format
@@ -132,8 +151,8 @@ def receive_piece_model_candidate(prepared, *, raw_output, finish_reason, reques
     require(usage is None or (type(usage) is dict and all(type(k) is str
             and (v is None or (type(v) is int and v >= 0)) for k, v in usage.items())), 'piece_model_usage')
     require(candidate_format in (None, PIECE_FIELD_SLOTS_FORMAT), 'piece_model_candidate_format')
-    from .piece_v1c import MODEL_REALIZATION_PROFILE
-    require(realization_profile in (None, MODEL_REALIZATION_PROFILE)
+    from .piece_v1c import MODEL_REALIZATION_PROFILES
+    require((realization_profile is None or realization_profile in MODEL_REALIZATION_PROFILES)
             and prepared.payload()['control'].get('realization_profile') == realization_profile,
             'piece_model_realization_profile')
     packet = None
@@ -188,7 +207,7 @@ def validate_piece_model_input(request, value):
     return blocks
 
 
-def piece_model_source_plan(request):
+def piece_model_source_plan(request, *, realization_profile=None):
     from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, build_refined_meaning, _plans
     from .piece_source import build_piece_source_meaning
     from .piece_v1c import compile_piece_artifact_plan
@@ -197,7 +216,8 @@ def piece_model_source_plan(request):
         return meaning, _plans(meaning)
     meaning = build_piece_source_meaning(request.source, expected_owner_id=request.expected_owner_id,
         expected_saved_input_id=request.expected_saved_input_id,
-        expected_source_version=request.expected_source_version)
+        expected_source_version=request.expected_source_version,
+        original_memo_only=_piece_model_uses_memo_only(request.source, realization_profile))
     return meaning, compile_piece_artifact_plan(meaning)
 
 
@@ -206,10 +226,11 @@ def generate_piece_model(request, value):
     from .piece_v1c import PieceEngineOutcome, realize_piece_model_artifact
     try:
         blocks = validate_piece_model_input(request, value)
-        meaning, plan = piece_model_source_plan(request)
+        profile = json.loads(value.receipt.metadata_json).get('realization_profile')
+        meaning, plan = piece_model_source_plan(request, realization_profile=profile)
         artifact = realize_piece_model_artifact(meaning, plan, body_blocks=blocks,
             tier=request.tier, requested_format=request.requested_format,
-            realization_profile=json.loads(value.receipt.metadata_json).get('realization_profile'))
+            realization_profile=profile)
         return PieceEngineOutcome(EngineStatus.GENERATED, (), meaning, plan, artifact)
     except PieceSemanticUnsupported as exc:
         return PieceEngineOutcome(EngineStatus.UNAVAILABLE, (str(exc),))

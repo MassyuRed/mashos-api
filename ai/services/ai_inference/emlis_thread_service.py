@@ -224,6 +224,13 @@ def _context_ref(snapshot):
     return identity('context-frame-targets', base, [':'.join(map(str, row)) for row in targets]) if targets else base
 
 
+def _premium_context_current(snapshot, payload):
+    guard = payload.get('premium_context_guard')
+    live = snapshot.get('premium_context_guard', {})
+    return guard is None or (snapshot['tier'] == 'premium'
+        and all(live.get(source) == version for source, version in guard.items()))
+
+
 def _observation_text(snapshot, payload):
     artifact = payload.get("artifact", {})
     if artifact.get("history_line") and not _context_current(snapshot, payload.get("context_guards", [])):
@@ -296,6 +303,7 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
     latest_body = _find(snapshot, t.get("last_observation_event_id"))
     target_visible = bool(latest_body and _generation_current(snapshot)
         and _context_current(snapshot, latest_body["payload"].get("context_guards", []))
+        and _premium_context_current(snapshot, latest_body['payload'])
         and latest_body["payload"].get("context_ref") == _context_ref(snapshot))
     current = _find(snapshot, t.get("last_observation_event_id")) if body_state in {
         "PRE_QUESTION", "FINAL", "REFINED", "PARTIALLY_REFINED", "UNCHANGED"} else None
@@ -316,6 +324,7 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
             if (p.get('artifact', {}).get('schema_version') == 'cocolon.emlis.recipient_reply.v1'
                     and (not _generation_current(snapshot)
                          or not _context_current(snapshot, p.get('context_guards', []))
+                         or not _premium_context_current(snapshot, p)
                          or p.get('context_ref') != _context_ref(snapshot))
                     and not _is_free_reply_on_paid_tier(snapshot, d, p)):
                 # A natural reply cannot be split into current/past sections.
@@ -371,7 +380,8 @@ class EmlisThreadService:
                  natural_reply_source=None, response_profile=None, natural_questions_enabled=True,
                  recipient_display_name_source=None,
                  natural_meaning_profile=ACTIVE_MEANING_PROFILE, natural_context_update_enabled=True,
-                 natural_context_update_paid_only=False, initial_observation_follow_enabled=False):
+                 natural_context_update_paid_only=False, initial_observation_follow_enabled=False,
+                 premium_context_enabled=False):
         if runtime_profile not in {RUNTIME_PROFILE, Q3_PROFILE}:
             raise ValueError("unsupported_thread_profile")
         if natural_reply_source is not None:
@@ -392,6 +402,7 @@ class EmlisThreadService:
         if type(initial_observation_follow_enabled) is not bool:
             raise ValueError("initial_observation_follow_setting_invalid")
         self.initial_observation_follow_enabled = initial_observation_follow_enabled
+        self.premium_context_enabled = premium_context_enabled
         if natural_meaning_profile not in {None, ACTIVE_MEANING_PROFILE}:
             raise ValueError('natural_reply_meaning_profile_invalid')
         self.natural_meaning_profile = natural_meaning_profile
@@ -451,6 +462,53 @@ class EmlisThreadService:
         snapshot = await self._hydrate(user_id, await self.store.read(user_id, input_id=input_id))
         return self._dto(snapshot)
 
+    async def _read_premium_context(self, user_id, snapshot):
+        from emlis_ai_safety_triage import build_emlis_safety_triage_decision
+        from kokoro_weather_service import build_prior_kokoro_observation
+
+        entry = snapshot['original']
+        before = parse_iso_utc(entry['created_at'])
+        if snapshot['tier'] != 'premium' or before is None or before > _now(snapshot):
+            return {}, {}
+        reads = [
+            asyncio.wait_for(self.store.prior_map_context(user_id, entry['id']), timeout=3),
+            asyncio.wait_for(build_prior_kokoro_observation(user_id, before), timeout=3),
+        ]
+        history_guards = (snapshot.get('thread') or {}).get('data', {}).get('context_guards')
+        if history_guards:
+            reads.append(asyncio.wait_for(
+                self.store.related_deep_insight_answer(user_id, entry['id'], history_guards), timeout=3))
+        prior_map, kokoro, *answers = await asyncio.gather(*reads, return_exceptions=True)
+        context, guard = {}, {}
+        if type(prior_map) is dict and prior_map.get('structures'):
+            context['watashi_map'] = {'generated_at': prior_map['generated_at'],
+                                      'structures': prior_map['structures']}
+            guard['watashi_map'] = prior_map['ref']
+        if type(kokoro) is tuple:
+            context['kokoro_graph'], guard['kokoro_graph'] = kokoro
+        answer = answers[0] if answers else None
+        if type(answer) is dict and all(isinstance(answer.get(key), str) for key in (
+                'source_record', 'recorded_at', 'answered_at', 'answer', 'question_context', 'ref')) and all(
+                build_emlis_safety_triage_decision(current_input=answer[key]).normal_observation_allowed
+                for key in ('answer', 'question_context')):
+            context['deep_insight_answer'] = {'recorded_at': answer['recorded_at'],
+                'answered_at': answer['answered_at'], 'answer': answer['answer'],
+                'ai_question_context': answer['question_context']}
+            guard['deep_insight_answer'] = {'ref': answer['ref'], 'source_record': answer['source_record']}
+        return context, guard
+
+    async def _revalidate_premium_context(self, user_id, snapshot, saved_guard):
+        _, live = await self._read_premium_context(user_id, snapshot)
+        saved_map = saved_guard.get('watashi_map')
+        if saved_map and 'period_end' in saved_map and saved_map != live.get('watashi_map'):
+            try:
+                if await asyncio.wait_for(self.store.prior_map_is_current(
+                        user_id, snapshot['original']['id'], saved_map), timeout=3):
+                    live['watashi_map'] = saved_map
+            except (ThreadStoreError, TimeoutError):
+                pass
+        return live
+
     async def _hydrate(self, user_id, snapshot, *, fresh=False):
         snapshot = copy.deepcopy(snapshot)
         t = snapshot.get("thread")
@@ -463,6 +521,12 @@ class EmlisThreadService:
         else:
             context = await self.store.context(user_id, snapshot['original']['id'])
         snapshot["context"] = context
+        if snapshot['tier'] == 'premium':
+            prior_context = next((e['payload']['premium_context_guard'] for e in reversed(snapshot['events'])
+                if e['kind'] == 'OBSERVATION' and e['payload'].get('premium_context_guard')), None)
+            if prior_context:
+                snapshot['premium_context_guard'] = await self._revalidate_premium_context(
+                    user_id, snapshot, prior_context)
         if t and fresh:
             t["data"]["context_guards"] = [h["guard"] for h in context["history"]]
             t["data"]["context_feedback"] = [[f["frame_key"],f["version"]] for f in context["feedback"]]
@@ -474,7 +538,10 @@ class EmlisThreadService:
         self._require_write()
         self._require_thread_write({"thread": next_state})
         result = await self.store.commit(user_id, snapshot, next_state, events, **kwargs)
-        return {**result, **({"context":snapshot["context"]} if "context" in snapshot else {})}
+        for key in ('context', 'premium_context_guard'):
+            if key in snapshot:
+                result[key] = snapshot[key]
+        return result
 
 
     async def start(self, user_id, input_id):
@@ -1017,10 +1084,10 @@ class EmlisThreadService:
             INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSION, INITIAL_OBSERVATION_FOLLOW_CONTEXT_VERSIONS,
             ISSUED_ANSWER_RECEPTION_VERSION,
             QWEN_9B_NATURAL_ALIAS,
-            RECIPIENT_VOICE_VERSION,
+            PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION,
             PAID_RECEIVED_ANSWER_CONTEXT_VERSION,
             RECEIVED_ANSWER_CONTEXT_VERSION, SOURCE_CONTEXT_VERSION, UNSPECIFIED_CONCERN_CONTEXT_VERSION,
-            build_natural_reply_messages)
+            build_natural_reply_messages, with_premium_reply_context)
         from cocolon_meaning_experience_engine.emlis_question import unspecified_concern_focus
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
@@ -1113,7 +1180,7 @@ class EmlisThreadService:
             meaning_profile=t['data'].get('natural_meaning_profile'), owner_scope=user_id,
             original_record=snapshot['original'], as_of=t['data'].get('natural_meaning_as_of'))
         voice_version = prior["payload"].get("recipient_voice_version") if prior else RECIPIENT_VOICE_VERSION
-        if voice_version not in (None, RECIPIENT_VOICE_VERSION):
+        if voice_version not in (None, PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION):
             raise NaturalReplyError("natural_reply_writer_identity_changed")
         name_call = ""
         if voice_version:
@@ -1132,6 +1199,30 @@ class EmlisThreadService:
                            if voice_version else {})
         if current_only:
             writer_identity['first_skip_current_only'] = True
+        prior_guard = prior['payload'].get('premium_context_guard') if prior else None
+        premium_guard = None
+        if prior_guard or (prior is None and self.premium_context_enabled and snapshot['tier'] == 'premium'
+                           and not current_only and not correcting):
+            context, guard = await self._read_premium_context(user_id, snapshot)
+            if 'deep_insight_answer' in guard and not any(
+                    record['input_id'] == guard['deep_insight_answer']['source_record']
+                    for record in json.loads(material.material_json)['past_user_records']):
+                # The normal writer may have excluded the past input through
+                # its source-safety and scope checks after the DB selected it.
+                del context['deep_insight_answer'], guard['deep_insight_answer']
+            if prior_guard:
+                # A previously unavailable independent source cannot change a
+                # saved provider attempt's contextual input on resumption.
+                context = {source: value for source, value in context.items() if source in prior_guard}
+                guard = {source: guard[source] for source in context}
+            enriched = with_premium_reply_context(material, context)
+            if enriched is not material:
+                material, premium_guard = enriched, guard
+            if prior and prior_guard != premium_guard:
+                return await self._finish(user_id, snapshot, body_state='UNAVAILABLE',
+                    state='RESPONSE_FAILED', failure='natural_reply_premium_context_changed')
+            if premium_guard:
+                writer_identity['premium_context_guard'] = premium_guard
         history_line = None
         if material.meaning_profile is not None:
             writer_identity.update({'meaning_profile': material.meaning_profile,
@@ -1248,10 +1339,17 @@ class EmlisThreadService:
         if analysis_material is not None:
             t['data']['analysis_material'] = analysis_material
             t['data']['evaluated_tier'] = snapshot['tier']
+        if premium_guard:
+            snapshot['premium_context_guard'] = await self._revalidate_premium_context(
+                user_id, snapshot, premium_guard)
+            if not _premium_context_current(snapshot, {'premium_context_guard': premium_guard}):
+                return await self._finish(user_id, snapshot, body_state='UNAVAILABLE',
+                    state='RESPONSE_FAILED', failure='natural_reply_premium_context_changed')
         observation = _event("OBSERVATION", {"text": candidate.text,
             "stage": "CORRECTED" if correcting else "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
             "context_guards": t["data"].get("context_guards", []),
+            **({'premium_context_guard': premium_guard} if premium_guard else {}),
             "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
                          "model": candidate.model, "analysis_state": analysis_state,
                          **({'analysis_material': analysis_material,

@@ -164,7 +164,8 @@ def _corrected_piece_model_material(source, *, expected_owner_id, tier):
     return material
 
 
-def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') -> dict:
+def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free',
+                         original_memo_only: bool = False) -> dict:
     """Source-only material for one explicitly selected Piece model attempt.
 
     Keep legacy piece_material bytes/IDs unchanged. This projection does not
@@ -288,7 +289,7 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
                                           scalar_ranges=group) for group in groups)
     for item in (() if active_update else sources):
         for field, text in item['text_fields'].items():
-            if not isinstance(text, str):
+            if not isinstance(text, str) or (original_memo_only and field == 'memo_action'):
                 continue
             offset = 0
             for line in text.splitlines(keepends=True):
@@ -306,6 +307,8 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
         'authorship': 'USER_OWNED_COCOLON_SHAPED',
         'source_selections_are_not_written_propositions': True,
     })
+    if original_memo_only:
+        material['control']['original_memo_only'] = True
     if refined and source.feeling_circumstance is not None:
         from .piece_refined import _validate_feeling_circumstance_source
         _validate_feeling_circumstance_source(source)

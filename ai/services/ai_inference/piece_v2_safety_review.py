@@ -112,6 +112,19 @@ def _check_formats(meaning, plan, payload: dict, artifact: PieceArtifact) -> Non
         _reject()
 
 
+def _review_original_artifact(source, owner, payload, artifact, *, original_memo_only=False):
+    meaning = build_piece_source_meaning(source, expected_owner_id=owner,
+        expected_saved_input_id=source.saved_input_id, expected_source_version=source.source_version,
+        original_memo_only=original_memo_only)
+    plan = compile_piece_artifact_plan(meaning)
+    if artifact.format_type == 'short_essay' and artifact.eligible_formats == ('short_essay',):
+        validate_piece_model_preservation(meaning, plan, artifact)
+    else:
+        validate_source_meaning_preservation(meaning, plan, artifact)
+        _check_formats(meaning, plan, payload, artifact)
+    return 'transformed' if meaning.role_bindings else 'ready'
+
+
 async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
     """Return only ready/transformed/ineligible/blocked for this exact artifact.
 
@@ -159,24 +172,16 @@ async def review_prepared_original(prepared: PreparedPiecePreview) -> str:
         # Check the full projected original before any role abstraction. Raw
         # source is neither replaced by the Piece body nor scanned only after
         # a potentially unsafe detail has disappeared from public wording.
-        if _scan(source.original_text):
+        if _scan(source.original_text) or _scan(artifact.piece_text):
             return 'blocked'
-        meaning = build_piece_source_meaning(source,
-            expected_owner_id=handoff.original.authenticated_owner_id,
-            expected_saved_input_id=source.saved_input_id,
-            expected_source_version=source.source_version)
-        plan = compile_piece_artifact_plan(meaning)
-        if _scan(artifact.piece_text):
-            return 'blocked'
-        if artifact.format_type == 'short_essay' and artifact.eligible_formats == ('short_essay',):
-            validate_piece_model_preservation(meaning, plan, artifact)
-            return 'transformed' if meaning.role_bindings else 'ready'
-        validate_source_meaning_preservation(meaning, plan, artifact)
-        _check_formats(meaning, plan, payload, artifact)
-        # Editorial restructuring/normalization alone is ready, not adjusted.
-        # A role binding is not sufficient by itself: S7 above verifies the
-        # complete source-stated substitution in the actual supplied body.
-        return 'transformed' if meaning.role_bindings else 'ready'
+        owner = handoff.original.authenticated_owner_id
+        try:
+            return _review_original_artifact(source, owner, payload, artifact)
+        except PieceContractError:
+            # A persisted draft may have been built with the full source or
+            # with the thought-only policy. Reprove the complete selected
+            # field under the same immutable original on visual-only updates.
+            return _review_original_artifact(source, owner, payload, artifact, original_memo_only=True)
     except PieceContractError:
         return 'ineligible'
     except (KeyError, TypeError, ValueError, UnicodeError, RecursionError):

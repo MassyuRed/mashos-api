@@ -222,6 +222,7 @@ def _month(value):
 _FREE_FIGURE_RELATIONS = ('CRITERION_EXPRESSION', 'CONTEXT_CONTRAST')
 _NO_SUPPORTED_STRUCTURE = '現時点の記録からは、選び方を支える条件をまだ確かめられていません。'
 NO_ACCEPTED_MAP_STRUCTURE = 'analysis_primary_structure_unavailable'
+PREVIOUS_MAP_RETAINED = 'analysis_previous_map_retained'
 
 
 def _plan_structures(projection):
@@ -301,11 +302,15 @@ def map_report_for_plan(row, tier):
     return row, True
 
 
-async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=0, month=None, metadata_only=False):
+async def read_maps(user_id, *, report_id=None, history=False, limit=60, offset=0, month=None,
+                    metadata_only=False, retained=False):
     owner = _owner(user_id)
-    result = await _rpc('analysis_cumulative_read', dict(p_user_id=owner,
-        p_id=_owner(report_id) if report_id is not None else None,
-        p_history=history, p_limit=limit, p_offset=offset, p_month=_month(month), p_metadata_only=metadata_only))
+    if retained:
+        result = await _rpc('analysis_cumulative_retained_read', dict(p_user_id=owner, p_metadata_only=metadata_only))
+    else:
+        result = await _rpc('analysis_cumulative_read', dict(p_user_id=owner,
+            p_id=_owner(report_id) if report_id is not None else None,
+            p_history=history, p_limit=limit, p_offset=offset, p_month=_month(month), p_metadata_only=metadata_only))
     try:
         keys = {'items', 'subscription_tier', 'matched', 'history_limit'}
         if 'withheld' in result:
@@ -1049,6 +1054,11 @@ async def _ensure_map(user_id, *, ensure=True, force=False, monthly=False, model
     result = await read_maps(owner, history=monthly, month=this_month if monthly else None, limit=1)
     row = result['items'][0] if result['items'] else None
     tier = result.get('subscription_tier', 'free')
+    if row is None and not monthly and not ensure:
+        previous = await read_maps(owner, retained=True)
+        if previous['items']:
+            return dict(_response(previous['items'][0], tier=previous['subscription_tier']),
+                        reason=PREVIOUS_MAP_RETAINED)
     if monthly and row:
         return _response(row, monthly=True, tier=tier)
     declined_saved = result.get('withheld', False)
@@ -1227,9 +1237,17 @@ async def map_status(user_id):
         import logging
         logging.getLogger(__name__).warning('Analysis refresh status read failed')
         refresh_status = 'failed'
+    retained = False
+    if row is None:
+        previous = await read_maps(user_id, retained=True)
+        if previous['items']:
+            result = previous
+            row = previous['items'][0]
+            retained = True
     analysis_unavailable = row is None and (refresh_status == NO_ACCEPTED_MAP_STRUCTURE or result.get('withheld'))
-    skip_reason = NO_ACCEPTED_MAP_STRUCTURE if analysis_unavailable else (
-        None if row else 'analysis_saved_map_unavailable')
+    skip_reason = PREVIOUS_MAP_RETAINED if retained else None
+    if row is None:
+        skip_reason = NO_ACCEPTED_MAP_STRUCTURE if analysis_unavailable else 'analysis_saved_map_unavailable'
     if refresh_status == NO_ACCEPTED_MAP_STRUCTURE or (analysis_unavailable and refresh_status is None):
         refresh_status = 'failed'
     return dict(version_key=row['content_json']['watashiMap']['projection_of'] if row else None,

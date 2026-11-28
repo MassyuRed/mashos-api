@@ -60,6 +60,20 @@ class EmlisThreadStore:
             raise ThreadStoreError('thread_unavailable', 404)
         return result
 
+    async def prior_map_context(self, user_id, input_id):
+        return await self._rpc('emlis_thread_prior_map_context', {
+            'p_user_id': user_id, 'p_input_id': input_id})
+
+    async def related_deep_insight_answer(self, user_id, input_id, context_guards):
+        return await self._rpc('emlis_related_deep_insight_answer', {
+            'p_user_id': user_id, 'p_input_id': input_id, 'p_context_guards': context_guards})
+
+    async def prior_map_is_current(self, user_id, input_id, binding):
+        return await self._rpc('emlis_thread_prior_map_is_current', {
+            'p_user_id': user_id, 'p_input_id': input_id, 'p_map_id': binding['id'],
+            'p_period_end': binding['period_end'], 'p_guard': binding['guard'],
+            'p_visibility': binding['visibility']}) is True
+
     async def commit(self, user_id, snapshot, next_state, events, *, finishing_attempt=None):
         old = snapshot.get("thread") or {}
         result = await self._rpc("emlis_thread_commit", {

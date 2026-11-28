@@ -85,6 +85,7 @@ name: Analysis observed content
       - ai/services/ai_inference/api_deep_insight.py
       - ai/tests/test_deep_insight.py
       - ai/tests/test_deep_insight_question_generation.py
+      - ai/tests/test_emlis_related_deep_insight_answer.py
       - ai/tests/deep_insight_sql.cjs
       - ai/tests/analysis_map_correction_sql.cjs
       - supabase/migrations/*_analysis_map_interpretation_corrections.sql
@@ -101,6 +102,7 @@ name: Analysis observed content
       - supabase/migrations/*_deep_insight_question_by_id.sql
       - supabase/migrations/*_deep_insight_skipped_emlis_questions.sql
       - supabase/migrations/*_deep_insight_effective_emlis_corrections.sql
+      - supabase/migrations/*_emlis_related_deep_insight_answer.sql
       - ai/tests/test_analysis_if_service.py
       - ai/tests/test_cmee_current_4b_packet.py
       - ai/tests/fixtures/cmee_current_4b_packet_20261114.json
@@ -169,8 +171,10 @@ name: Analysis observed content
       - ai/tests/test_analysis_v23_record_summary.py
       - ai/tests/test_analysis_primary_structures.py
       - ai/tests/test_analysis_premium_structure_relations.py
+      - ai/tests/test_emlis_premium_context.py
       - ai/services/ai_inference/cocolon_meaning_experience_engine/cores/analysis/structure_relations.py
       - supabase/migrations/*_analysis_premium_structure_relations.sql
+      - supabase/migrations/*_emlis_prior_map_context.sql
       - ai/tests/test_analysis_v24_distinct_participants.py
       - ai/tests/test_analysis_merge_wire.py
       - ai/tests/test_analysis_merge_transport.py
@@ -359,6 +363,7 @@ jobs:
           ai/tests/piece_v2/test_b05_piece_answer_update_saved_pipeline.py
           ai/tests/piece_v2/test_b05_refined_source_fence_sql.py
           ai/tests/test_emlis_natural_reply_application.py
+          ai/tests/test_emlis_premium_context.py
           ai/tests/test_emlis_active_meaning_application.py
           ai/tests/test_emlis_analysis_material.py
           ai/tests/test_analysis_emlis_material_handoff.py
@@ -372,6 +377,7 @@ jobs:
           ai/tests/test_analysis_deep_insight_handoff.py
           ai/tests/test_deep_insight.py
           ai/tests/test_deep_insight_question_generation.py
+          ai/tests/test_emlis_related_deep_insight_answer.py
           ai/tests/test_analysis_if_service.py
           ai/tests/test_cmee_current_4b_packet.py
           ai/tests/test_emlis_natural_frames_application.py

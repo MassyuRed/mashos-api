@@ -292,6 +292,22 @@ def test_saved_reply_reopens_without_provider_or_meaning_generation(natural_case
     assert all(x not in public for x in ("source_prefix_ref", "material_json", "NATURAL_REPLY", "self-hosted-test-4b"))
 
 
+def test_current_writer_receives_factual_and_follow_guidance_with_same_source(natural_case):
+    from cocolon_meaning_experience_engine.natural_reply import (
+        PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION, build_natural_reply_messages)
+
+    user, parent, service, calls = natural_case
+    initial = run(service.start(user, parent))
+    previous, current = [build_natural_reply_messages(replace(calls[0], recipient_voice_version=version))
+        for version in (PREVIOUS_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION)]
+    assert previous[1] == current[1]
+    for guidance in ('伝聞にするのは', '因果を結ばない', '強度は言葉の温度', 'Emlisが本人に伝えたい言葉'):
+        assert guidance not in previous[0]['content']
+        assert guidance in current[0]['content']
+    assert run(service.get(user, parent)) == initial
+    assert len(calls) == 1
+
+
 def test_paid_recipient_voice_reuses_the_writer_and_saves_only_the_repaired_address(natural_case, qdb, monkeypatch):
     from cocolon_meaning_experience_engine.natural_reply import RECIPIENT_VOICE_VERSION
 
@@ -340,14 +356,16 @@ def test_paid_recipient_voice_reuses_the_writer_and_saves_only_the_repaired_addr
     assert len(calls) == 1
 
 
-def test_prechange_receipt_retries_with_original_prompt_and_reader_keeps_a_correctable_suffix(natural_case, qdb, monkeypatch):
+@pytest.mark.parametrize('prior_voice', [None, 'emlis_recipient_voice.v1'])
+def test_prechange_receipt_retries_with_original_prompt_and_reader_keeps_a_correctable_suffix(
+        natural_case, qdb, monkeypatch, prior_voice):
     import cocolon_meaning_experience_engine.natural_reply as natural_reply
 
     user, parent, service, calls = natural_case
     before = f'Emlis、{BODY}'
 
     async def old_source(material):
-        assert material.recipient_voice_version is None
+        assert material.recipient_voice_version == prior_voice
         calls.append(material)
         return NaturalReply(before, 'synthetic-old-reply', material.source_prefix_ref)
 
@@ -363,16 +381,19 @@ def test_prechange_receipt_retries_with_original_prompt_and_reader_keeps_a_corre
 
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', rpc)
     with monkeypatch.context() as prechange:
-        prechange.setattr(natural_reply, 'RECIPIENT_VOICE_VERSION', None)
+        prechange.setattr(natural_reply, 'RECIPIENT_VOICE_VERSION', prior_voice)
+        prechange.setattr(natural_reply, '_RECIPIENT_VOICE_GROUNDING_MESSAGE', '')
         pending = run(service.start(user, parent))
     assert pending['can_retry']
     reopened = run(service.action(user, pending['thread_id'], action='retry_response',
         expected_revision=pending['revision'], idempotency_key='save-legacy-reply', operation_id=pending['operation_id']))
     original = run(service.store.read(user, input_id=parent))
     receipt, = [e['payload'] for e in original['events'] if e['payload'].get('stage') == 'NATURAL_REPLY_RECEIVED']
-    assert 'recipient_voice_version' not in receipt and receipt['reply']['text'] == before
+    persisted_text = BODY if prior_voice else before
+    assert receipt.get('recipient_voice_version') == prior_voice
+    assert receipt['reply']['text'] == persisted_text
     saved, = [e for e in original['events'] if e['kind'] == 'OBSERVATION']
-    assert saved['payload']['text'] == saved['payload']['artifact']['text'] == before
+    assert saved['payload']['text'] == saved['payload']['artifact']['text'] == persisted_text
     assert reopened['current_observation'] == {'event_id': saved['id'], 'text': BODY}
     assert run(service.get(user, parent))['current_observation'] == reopened['current_observation']
     corrected = run(service.correct_interpretation(user, reopened['thread_id'], target_event_id=saved['id'],

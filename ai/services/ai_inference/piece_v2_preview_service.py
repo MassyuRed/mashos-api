@@ -33,7 +33,7 @@ from piece_v2_source_adapter import (
     project_saved_refined_lineage, project_saved_refined_fence,
     project_saved_corrected_source,
 )
-from piece_v2_visual import (build_selected_visual_recipe, require_piece_visual_selection,
+from piece_v2_visual import (EXPANDED_PALETTE_RENDERERS, build_selected_visual_recipe, require_piece_visual_selection,
                              validate_visual_recipe, visual_selection_from_recipe)
 from request_metrics import set_metric
 
@@ -558,7 +558,7 @@ class PiecePreviewService:
                 _preview_content(dict(row, eligible_formats=row['preview_eligible_formats']))
             except PieceContractError:
                 raise _error('PIECE_HASH_MISMATCH') from None
-            capable_renderer = row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+            capable_renderer = row['renderer_version'] in EXPANDED_PALETTE_RENDERERS
             for selection in (visual_selection_from_recipe(row['visual_recipe']), value['visual_selection']):
                 require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
                                                visual_editor=visual_editor and capable_renderer,

@@ -34,6 +34,7 @@ def application_thread_service():
                               recipient_display_name_source=_resolve_display_name_for_user,
                               natural_context_update_enabled=context_update_mode in {"true", "paid"},
                               natural_context_update_paid_only=context_update_mode == "paid",
+                              premium_context_enabled=os.getenv("COCOLON_EMLIS_PREMIUM_CONTEXT") == "true",
                               initial_observation_follow_enabled=
                                   os.getenv("COCOLON_EMLIS_INITIAL_OBSERVATION_FOLLOW") == "true")
 
