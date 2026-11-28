@@ -8,6 +8,7 @@ name: Analysis observed content
       - agent/cmee-continuation-20261124
       - agent/cmee-normal-emlis-fixes-20261125
       - agent/watashi-map-plan-views-20261125
+      - agent/cmee-map-conditions-20261128
     paths:
       - .github/workflows/analysis-observed-content.yml
       - ai/services/ai_inference/cocolon_meaning_experience_engine/**
