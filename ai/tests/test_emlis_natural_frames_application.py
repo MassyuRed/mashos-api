@@ -163,10 +163,9 @@ def test_downgrade_hides_premium_frames_without_regenerating(natural_case, qdb):
 def test_current_interpretation_correction_does_not_republish_old_frames(natural_case, qdb, explanation):
     user, parent, service, calls, _, _ = _case(natural_case, qdb)
     dto = run(service.start(user, parent))
-    # Complete the current question before correcting this saved reply.
-    dto = run(service.action(user, dto['thread_id'], action='skip',
-        question_id=dto['pending_question']['question_id'], expected_revision=dto['revision'],
-        idempotency_key='finish-before-correction'))
+    # A first unanswered skip intentionally clears frame context. Answer the
+    # question instead so this regression still tests a saved reply with frames.
+    dto = run(answer(service, user, dto, 'その時は怖かった。'))
     assert dto['interpretive_frames'] and dto['can_correct']
     changed = run(service.correct_interpretation(user, dto['thread_id'],
         target_event_id=dto['current_observation']['event_id'], target_text='嬉しくなかった',

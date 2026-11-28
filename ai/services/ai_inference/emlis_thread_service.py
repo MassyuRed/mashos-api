@@ -224,6 +224,15 @@ def _context_ref(snapshot):
     return identity('context-frame-targets', base, [':'.join(map(str, row)) for row in targets]) if targets else base
 
 
+def _observation_context_current(snapshot, payload):
+    # Only this saved observation was authored from the unchanged original
+    # alone. A preceding paid acknowledgement can still depend on history.
+    if payload.get('first_skip_current_only') is True:
+        return True
+    return (_generation_current(snapshot) and _context_current(snapshot, payload.get('context_guards', []))
+            and payload.get('context_ref') == _context_ref(snapshot))
+
+
 def _observation_text(snapshot, payload):
     artifact = payload.get("artifact", {})
     if artifact.get("history_line") and not _context_current(snapshot, payload.get("context_guards", [])):
@@ -294,16 +303,14 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
     state = "RESPONSE_FAILED" if expired else t["state"]
     body_state = d.get("body_state", "UNAVAILABLE")
     latest_body = _find(snapshot, t.get("last_observation_event_id"))
-    target_visible = bool(latest_body and _generation_current(snapshot)
-        and _context_current(snapshot, latest_body["payload"].get("context_guards", []))
-        and latest_body["payload"].get("context_ref") == _context_ref(snapshot))
+    target_visible = bool(latest_body and _observation_context_current(snapshot, latest_body['payload']))
     current = _find(snapshot, t.get("last_observation_event_id")) if body_state in {
         "PRE_QUESTION", "FINAL", "REFINED", "PARTIALLY_REFINED", "UNCHANGED"} else None
-    if current and (not _generation_current(snapshot)
-            or current["payload"].get("artifact", {}).get("schema_version") == "cocolon.emlis.recipient_reply.v1"
-                and not target_visible):
-        current = None
-        body_state = "CONTEXT_CHANGED"
+    if current:
+        is_natural = current['payload'].get('artifact', {}).get('schema_version') == ARTIFACT_SCHEMA
+        if not (target_visible if is_natural else _generation_current(snapshot)):
+            current = None
+            body_state = 'CONTEXT_CHANGED'
     timeline = []
     correction_events = [e for e in snapshot["events"] if e["kind"] == "OPERATION"
         and e["payload"].get("stage") == "INTERPRETATION_CORRECTION"]
@@ -313,10 +320,8 @@ def thread_dto(snapshot, *, requested_attempt_id=None, can_write=True):
         common = {"event_id": event["id"], "kind": event["kind"], "recorded_at": event.get("recorded_at"),
                   "round_index": event["round_index"]}
         if event["kind"] == "OBSERVATION":
-            if (p.get('artifact', {}).get('schema_version') == 'cocolon.emlis.recipient_reply.v1'
-                    and (not _generation_current(snapshot)
-                         or not _context_current(snapshot, p.get('context_guards', []))
-                         or p.get('context_ref') != _context_ref(snapshot))
+            if (p.get('artifact', {}).get('schema_version') == ARTIFACT_SCHEMA
+                    and not _observation_context_current(snapshot, p)
                     and not _is_free_reply_on_paid_tier(snapshot, d, p)):
                 # A natural reply cannot be split into current/past sections.
                 # Do not leak a stale paid/deleted source through the timeline.
@@ -1252,6 +1257,7 @@ class EmlisThreadService:
             "stage": "CORRECTED" if correcting else "REFINED" if t.get("latest_answer_event_id") else "INITIAL",
             "source_prefix_ref": t["source_prefix_ref"], "context_ref": _context_ref(snapshot),
             "context_guards": t["data"].get("context_guards", []),
+            **({'first_skip_current_only': True} if current_only else {}),
             "artifact": {"schema_version": ARTIFACT_SCHEMA, "text": candidate.text,
                          "model": candidate.model, "analysis_state": analysis_state,
                          **({'analysis_material': analysis_material,

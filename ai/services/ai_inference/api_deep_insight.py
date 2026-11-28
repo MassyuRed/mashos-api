@@ -317,10 +317,10 @@ async def _issue_question(owner, command, deadline, *, expected_map_version=None
 
     # Re-read eligibility and the lane's own material after a conflicting write.
     refreshed_state, previous = await _issue_state(owner, command.lane)
-    if refreshed_state.day != state.day:
-        return _Attempt("source_changed", outcome.result)
     if previous is not None:
         return _Attempt(previous.status, previous)
+    if refreshed_state.day != state.day:
+        return _Attempt("source_changed", outcome.result)
 
     refreshed_guard, refreshed_material = await _candidate_context(owner, command)
     if not _map_source_matches(refreshed_material, expected_map_version):

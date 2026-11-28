@@ -539,3 +539,49 @@ def test_real_sql_commits_private_proof_and_rereads_one_saved_id_at_each_tier(sa
     assert changed['code'] == '55000'
     still_saved, = asyncio.run(service.read_maps(OWNER, limit=1))['items']
     assert still_saved['id'] == rid and still_saved['content_json']['structure_relations'] == expected
+
+
+def test_saved_map_and_completion_notification_commit_together(saved_map_source, monkeypatch):
+    from unittest.mock import AsyncMock
+    import fcm_push_queue as push_queue
+
+    db, rpc, _, originals, snapshot = saved_map_source
+    assert 'code' not in db.query('''create table public.astor_jobs (
+        job_key text primary key, job_type text, user_id uuid, payload jsonb, priority integer, run_after timestamptz,
+        max_attempts integer, constraint synthetic_queue_offline check (false))''')
+    sql_script(db, '20261127080000_analysis_withhold_unaccepted_map.sql')
+    sql_script(db, '20261128071418_analysis_cumulative_completion_push.sql')
+    artifact, coverage, _ = _artifact(COEXISTENCE, snapshot)
+    private = artifact.private_evidence()
+    private.update(coverage=coverage, source_record_refs=[source['id'] for source in originals])
+    body = dict(p_user_id=OWNER, p_guard=snapshot['guard'], p_artifact_id=artifact.artifact_id,
+        p_private_evidence=private, p_projection=artifact.safe_projection(authenticated_owner_scope=OWNER),
+        p_text=artifact.safe_text_projection(authenticated_owner_scope=OWNER)['text'],
+        p_start=snapshot['period_start'], p_end=snapshot['period_end'])
+    with pytest.raises(HTTPException, match='23514'):
+        asyncio.run(rpc('analysis_cumulative_commit', body))
+    assert not asyncio.run(service.read_maps(OWNER, limit=1))['items']
+    assert not db.query('select * from public.astor_jobs')['rows']
+
+    assert 'code' not in db.query('alter table public.astor_jobs drop constraint synthetic_queue_offline')
+    rejected = deepcopy(body)
+    rejected['p_projection']['overview']['primary_structures'] = []
+    with pytest.raises(HTTPException, match='22023'):
+        asyncio.run(rpc('analysis_cumulative_commit', rejected))
+    assert not db.query('select * from public.astor_jobs')['rows']
+
+    rid = asyncio.run(rpc('analysis_cumulative_commit', body))
+    row, = asyncio.run(service.read_maps(OWNER, limit=1))['items']
+    assert row['id'] == rid
+    old_writer = AsyncMock(return_value=False)
+    monkeypatch.setattr(push_queue, '_insert_push_job_once', old_writer)
+    asyncio.run(service._queue_map_update_notification(OWNER, row))
+    job, = db.query('select job_key,job_type,user_id,payload,priority from public.astor_jobs')['rows']
+    assert (job['job_key'], job['job_type'], job['user_id'], job['priority']) == (
+        old_writer.await_args.kwargs['job_key'], 'send_fcm_push_v1', OWNER, 60)
+    assert job['payload']['data'] == old_writer.await_args.kwargs['payload']['data']
+    assert job['payload']['recipient_user_ids'] == [OWNER]
+    assert originals[0]['memo'] not in json.dumps(job, ensure_ascii=False)
+    assert asyncio.run(rpc('analysis_cumulative_commit', dict(p_user_id=OWNER,
+        p_guard=snapshot['guard'], p_existing_id=rid))) == rid
+    assert len(db.query('select job_key from public.astor_jobs')['rows']) == 1

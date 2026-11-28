@@ -627,6 +627,7 @@ def test_record_issuance_does_not_change_concurrent_theme_material(api_harness, 
 @pytest.mark.parametrize(("change", "http_status", "result", "attempts"), [
     ("same_guard", 200, "no_question", 1),
     ("next_day", 200, "no_question", 1),
+    ("next_day_and_slot_filled", 200, "existing", 1),
     ("entitlement_lost", 403, "deep_insight_theme_locked", 1),
     ("slot_filled", 200, "existing", 1),
     ("new_guard_again", 200, "no_question", 2),
@@ -652,11 +653,11 @@ def test_theme_recovery_rechecks_day_entitlement_slot_and_guard(api_harness, mon
         writes.append(payload["p_material_guard"])
         if change != "same_guard":
             context["theme_guard"] = f"{change}-{len(writes)}"
-        if change == "next_day":
+        if change in ("next_day", "next_day_and_slot_filled"):
             state["day"] = "2026-11-22"
         if change == "entitlement_lost":
             state["can_use_theme"] = False
-        if change == "slot_filled":
+        if change in ("slot_filled", "next_day_and_slot_filled"):
             state["theme"] = {**Q, "lane": "theme", "theme": "人間関係"}
         return httpx.Response(200, json={"status": "no_question", "question": None})
 
@@ -666,7 +667,7 @@ def test_theme_recovery_rechecks_day_entitlement_slot_and_guard(api_harness, mon
     assert response.status_code == http_status
     payload = response.json()
     assert payload.get("status", payload.get("detail")) == result
-    if change == "slot_filled":
+    if result == "existing":
         assert payload["question"] == state["theme"]
     assert len(generations) == len(writes) == attempts
     assert len(set(writes)) == attempts

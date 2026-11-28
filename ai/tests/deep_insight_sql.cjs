@@ -106,15 +106,29 @@ async function verifyThemeNotifications() {
 
   await preference(paidUser, false);
   assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  // The ordinary worker settles an ineligible delivery without taking its send claim.
+  await db.query(`update public.astor_jobs set status='done', attempts=1, worker_id='first-worker',
+    started_at=now(), finished_at=now() where job_key=$1`, [queued.job_key]);
+  assert.deepEqual(await alerts(), {queued: 0});
   await preference(paidUser, true);
   await db.query('update public.profiles set push_enabled=false where id=$1', [paidUser]);
   assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  assert.deepEqual(await alerts(), {queued: 0});
   await db.query('update public.profiles set push_enabled=true where id=$1', [paidUser]);
   await db.query("update public.profiles set push_token='legacy-device' where id=$1", [paidUser]);
   assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  assert.deepEqual(await alerts(), {queued: 0});
   await registerPush(paidUser, 'rotated-compatible-device');
+  assert.deepEqual(await alerts(), {queued: 1});
+  assert.deepEqual(await alerts(), {queued: 0});
+  const reopened = await job(paidQuestion);
+  assert.deepEqual([reopened.job_key, reopened.status, reopened.attempts,
+    reopened.worker_id, reopened.started_at, reopened.finished_at], [queued.job_key, 'queued', 0, null, null, null]);
+  assert.deepEqual(reopened.payload, queued.payload);
   assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: true, token: 'rotated-compatible-device'});
   assert.deepEqual(await claim(paidUser, paidQuestion), {eligible: false});
+  await db.query("update public.astor_jobs set status='done', finished_at=now() where job_key=$1", [queued.job_key]);
+  assert.deepEqual(await alerts(), {queued: 0});
   await db.query('delete from public.astor_jobs where job_key=$1', [queued.job_key]);
   assert.deepEqual(await alerts(), {queued: 0});
 
@@ -780,6 +794,8 @@ async function run() {
   await db.exec('reset role');
   await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
     '20261121185100_deep_insight_theme_ready_notifications.sql'), 'utf8'));
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations',
+    '20261128072435_reopen_unsent_deep_insight_theme_notice.sql'), 'utf8'));
   await verifyThemeNotifications();
   await verifyThemePrivacyAndRecordsPlan(themeGrounding);
   await db.exec('reset role');
