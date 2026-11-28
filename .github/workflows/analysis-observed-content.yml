@@ -6,6 +6,7 @@ name: CMEE Map and DeepInsight focused verification
       - agent/cmee-map-piece-focused-check-20261128
     paths:
       - .github/workflows/analysis-observed-content.yml
+      - ai/tests/deep_insight_sql.cjs
 
 permissions:
   contents: read
