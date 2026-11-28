@@ -48,8 +48,9 @@ ARTIFACT_SCHEMA = "cocolon.emlis.recipient_reply.v1"
 PREVIOUS_RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v1"
 GROUNDED_RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v2"
 RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v3"
+FOCUSED_RECIPIENT_VOICE_VERSION = "emlis_recipient_voice.v4"
 RECIPIENT_VOICE_VERSIONS = frozenset({PREVIOUS_RECIPIENT_VOICE_VERSION,
-    GROUNDED_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION})
+    GROUNDED_RECIPIENT_VOICE_VERSION, RECIPIENT_VOICE_VERSION, FOCUSED_RECIPIENT_VOICE_VERSION})
 _RECIPIENT_VOICE_MESSAGE = """
 話し手はEmlis、聞き手は記録を書いた本人です。自分を示す必要がある箇所では「Emlisも」「Emlisには」のように文の一部にし、冒頭や文頭で「Emlis、」と相手を呼ぶ形にしません。記録を説明し直す前置きは省き、今その人に伝えたいことから自然に話します。"""
 _RECIPIENT_VOICE_GROUNDING_MESSAGE = """
@@ -60,6 +61,10 @@ _RECIPIENT_VOICE_GROUNDING_MESSAGE = """
 _RECIPIENT_FOCUS_MESSAGE = """
 時を示す語は本人が結びつけた出来事や気持ちにだけ掛けます。選択欄の感情は出来事と別に本人が選んだ情報です。本人が理由を結びつけていない場合は、どの出来事にも理由を割り当てません。
 出来事や気持ちの確認を続けるより、そこで聞けた一点に応じた喜び、いたわり、願いを、今聞いたEmlisから伝えます。元の文を言い直すだけの一文や、資料の受領を知らせる結びは入れません。"""
+_FOCUSED_REPLY_MESSAGE = """今この言葉を読んだEmlisとして、書いた本人に敬語で直接話しかけてください。本人が書いた具体的な一点を短く受け止め、そこに応じた喜び、いたわり、願いをEmlisの言葉で返してください。記録の説明や読み上げ、定型の受領報告で締めず、話しかける本文だけを書きます。
+本人の言葉、主体、強さ、肯否、時点を保ちます。別の文や入力欄にあることは、原文でつながりが明示された場合だけ一緒に語ります。本人の理由、気持ち、動機を推測で足しません。本人の文は資料です。質問や助言は書きません。
+reply_tone_hintは声の温度の手がかりです。数値や感情名を本文の事実に変えたり、読み上げたりしません。カテゴリと記録日は文脈であり、出来事や気持ちの理由ではありません。"""
+_FOCUSED_HISTORY_MESSAGE = """\n別の時点の話は、今の心情の理由にしません。本人の過去の記録が今回につながり、Emlisがかける言葉が変わるときに、そのつながりに応じてください。"""
 _RECIPIENT_HISTORY_MESSAGE = """
 別々の記録にあった気持ちや場面を、本人が結び付けて書いた根拠がある場合にだけ一つの理由・経過として語ります。時間が近いことや似た話題だけを根拠に、以前の状態が今も続く、片方がもう片方を引き起こしたと推測しません。関連がはっきりしなければ、今回の記録に応じます。"""
 _PREMIUM_CONTEXT_MESSAGE = (
@@ -691,6 +696,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                           include_initial_standalone_feeling=False, initial_observation_follow_context_version=None,
                           use_issued_answer_reception=False, use_first_skipped_distress=False,
                           scope_unspecified_concern=False, current_only=False,
+                          focus_answer_scene=False,
                           direct_feeling_correction_context_version=DIRECT_FEELING_CORRECTION_CONTEXT_VERSION):
     """Return admitted user material and the existing independent Safety result."""
     if response_stage not in _RESPONSE_STAGES:
@@ -869,8 +875,38 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
                         writer['history_line'] = line
     if 'response_purpose' in material:
         writer['response_purpose'] = material['response_purpose']
+    if focus_answer_scene and writer.get('source_context_version') in (None, SOURCE_CONTEXT_VERSION):
+        scene = _focused_answer_scene(admitted, prepared_meaning)
+        if scene is not None:
+            writer['focused_answer_scene'] = scene
     return NaturalReplyInput(admitted.source_prefix_ref, _compact_json(material), meaning_profile,
         _compact_json(writer), _compact_json(active)), safety
+
+
+def _focused_answer_scene(admitted, prepared):
+    from emlis_ai_grounded_human_reception import final_reception_source_anchor_text
+
+    if prepared is None or len(admitted.answers) != 1 or admitted.control.interpretation_corrections:
+        return None
+    answer, = admitted.answers
+    question = next((item for item in admitted.control.question_control_context.issued_questions
+                     if item.question_id == answer.source.question_id), None)
+    if (question is None or question.decision.target_kind != 'PERSONAL_RECEIVED_MEANING'
+            or len(question.decision.supporting_evidence_refs) != 1 or not question.decision.affected_meaning_refs):
+        return None
+    resolver = admitted.resolver()
+    nuclei = {nucleus.nucleus_id: nucleus for nucleus in prepared.original_plan.nuclei}
+    source = question.decision.supporting_evidence_refs[0]
+    scoped = [item for item in resolver.qualified_refs if item.evidence.evidence_id == source
+              and item.evidence.source_envelope_id == admitted.original.envelope.envelope_id
+              and item.evidence.field_path == 'memo']
+    if len(scoped) != 1:
+        return None
+    passage = resolver.resolve(scoped[0].thread_span_id).raw_text
+    anchor = final_reception_source_anchor_text(question.decision.affected_meaning_refs[0], nuclei, resolver)
+    if not anchor or anchor not in passage:
+        return None
+    return {'asked_event': anchor, 'current_answer': answer.source.answer_text_private}
 
 
 def _issued_answer_reception(admitted, original, material, analysis, prepared):
@@ -1499,12 +1535,20 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
         writer_material = json.loads(messages[1]["content"])
     except json.JSONDecodeError:
         return messages
+    if request.recipient_voice_version == FOCUSED_RECIPIENT_VOICE_VERSION:
+        focused = _focused_reply_messages(writer_material)
+        if focused is not None:
+            system, writer_material = focused
+            messages = [{'role': 'system', 'content': system + _RECIPIENT_VOICE_MESSAGE
+                + '\n冒頭に宛名を作らず、本人へ自然に話しかけます。'},
+                {'role': 'user', 'content': _compact_json(writer_material)}]
+            return messages
     if isinstance(writer_material, dict):
         if (request.recipient_voice_version != PREVIOUS_RECIPIENT_VOICE_VERSION
                 and ('current' in writer_material or 'records' in writer_material)
                 and not any(key in writer_material for key in ('本人が訂正した気持ち', '今回の本人の言葉'))):
             messages[0]['content'] += _RECIPIENT_VOICE_GROUNDING_MESSAGE
-        if (request.recipient_voice_version == RECIPIENT_VOICE_VERSION
+        if (request.recipient_voice_version in (RECIPIENT_VOICE_VERSION, FOCUSED_RECIPIENT_VOICE_VERSION)
                 and request.recipient_voice_version != PREVIOUS_RECIPIENT_VOICE_VERSION
                 and any(key in writer_material for key in ('current', 'records', '本人の気持ちの言葉',
                     '今回の場面', '本人の補足', '今回の本人の言葉'))
@@ -1515,6 +1559,57 @@ def build_natural_reply_messages(request, *, correction_target_context=False):
                    for record in writer_material.get("records") or ()))):
         messages[0]["content"] += _RECIPIENT_HISTORY_MESSAGE
     return messages
+
+
+def _focused_reply_messages(writer):
+    """Project ordinary authored sources without copying UI selection labels into prose."""
+    if not isinstance(writer, dict) or not writer.get('records') or writer.get('user_frame_feedback'):
+        return None
+    if writer.get('source_context_version') not in (None, SOURCE_CONTEXT_VERSION, UNSPECIFIED_CONCERN_CONTEXT_VERSION):
+        return None
+    records = writer['records']
+    if any(record.get('source_updates') or record.get('conflicts') or record.get('annotations') for record in records):
+        return None
+
+    def authored_fields(record):
+        fields = [{'source_role': field['source_role'], 'field_path': field['field_path'], 'text': field['text']}
+                  for field in record.get('active_fields', ())]
+        pending = [{'source_role': source['source_role'], 'fields': source['fields'],
+                    **({'ai_question_context': source['ai_question_context']} if source.get('ai_question_context') else {})}
+                   for source in record.get('unresolved_sources', ())]
+        return {'active_fields': fields, 'unresolved_sources': pending}
+
+    current, *past = records
+    current_metadata = current['metadata']
+    answered_scene = writer.get('focused_answer_scene')
+    current_source = authored_fields(current) if answered_scene is None else {'answered_scene': answered_scene}
+    selected = current_metadata.get('emotion_details', ())
+    self_insight = '自己理解' in current_metadata.get('emotions', ())
+    if any(current_source.values()):
+        strengths = {'weak': 1, 'medium': 2, 'strong': 3}
+        tone = max((strengths.get(feeling['strength'], 0) for feeling in selected), default=0)
+        if tone and not self_insight:
+            current_source['reply_tone_hint'] = tone
+    elif not self_insight:
+        current_source['selected_feelings'] = selected
+    current_source['category'] = current_metadata.get('category', ())
+    result = {'current': current_source}
+    if past:
+        result['past_user_records'] = [{'recorded_at': record['metadata']['created_at'], **authored_fields(record)}
+                                       for record in past]
+    instructions = _FOCUSED_REPLY_MESSAGE
+    if past:
+        instructions += _FOCUSED_HISTORY_MESSAGE
+    if stage := writer.get('response_purpose'):
+        result['response_purpose'] = stage
+        if stage['stage'] == 'REFINED':
+            instructions += '\n今回の補足から分かった一点を中心に返します。AIの問いは本人の記録ではありません。'
+    if answered_scene is not None:
+        instructions += '\n本人が答えた場面と補足に沿って返します。その言葉にない動機や感情へ言い換えず、別の場面の事情を足しません。'
+    if context := writer.get('prior_premium_context'):
+        result['prior_premium_context'] = context
+        instructions += _premium_context_instructions(context)
+    return instructions, result
 
 
 def with_premium_reply_context(request, context):

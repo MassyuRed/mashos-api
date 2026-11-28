@@ -58,6 +58,10 @@ _THEME_ADVICE_QUESTION = re.compile(
     r"のが(?:適切|妥当)(?:です|でしょう)か|"
     r"べき(?:タイミング|時期)は[、, ]*(?:どんな(?:とき|時)|いつ)(?:です|でしょう)か)[？?]\Z"
 )
+_THEME_CHOICE_CRITERION_PARTICLE = re.compile(
+    r"^(どちら(?:にする|を選ぶ)か)を[、,， ]*"
+    r"(?=何を(?:基準|目安|決め手|手がかり)に(?:し|決め|選び)ますか[？?]\Z)"
+)
 _THEME_REPEATED_CRITERION = re.compile(
     r"(?:基準|目安|決め手)[はを][、, ]*何を(?:基準|目安|決め手|手がかり)に"
 )
@@ -1267,6 +1271,8 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
     body = _accept_surface(raw, plan=plan, theme=direction["theme"])
     if body is not None:
         body = _without_repeated_introduction(body, scene, repeated_introductions)
+        if angle_id == "priority" and decision_in_scene:
+            body = _THEME_CHOICE_CRITERION_PARTICLE.sub(r"\1は、", body)
         body = _THEME_REDUNDANT_LIMIT.sub(r"\1\2\3", body)
         body = body.replace("を取りかかる", "に取りかかる")
     if (body is None or len(body) < 7 or not _THEME_QUESTION_WORD.search(body) or not _THEME_QUESTION_END.search(body)

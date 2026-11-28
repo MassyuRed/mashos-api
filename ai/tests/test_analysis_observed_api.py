@@ -69,6 +69,11 @@ class AnalysisApiTests(unittest.IsolatedAsyncioTestCase):
             row = self.saved[-1]
             self.months.setdefault(self.month, dict(row, snapshot_month=self.month, report_type='monthly', captured_at=row['generated_at']))
             return row['id']
+        if name == 'analysis_cumulative_retained_read':
+            self.assertEqual(set(p), {'p_user_id', 'p_metadata_only'})
+            self.assertIsInstance(p['p_metadata_only'], bool)
+            return dict(items=[], subscription_tier=self.tier, matched=False,
+                        history_limit={'free': 2, 'plus': 12, 'premium': None}[self.tier])
         if name == 'analysis_cumulative_read':
             if p['p_history'] or p.get('p_month'):
                 rows = sorted(self.months.values(), key=lambda r: r['snapshot_month'], reverse=True)

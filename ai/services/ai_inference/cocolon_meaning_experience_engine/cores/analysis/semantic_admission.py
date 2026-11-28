@@ -3835,7 +3835,7 @@ def _v3_choice_contrast_edge(refs, pair, edges, *, units=None):
             'label': label, 'relation_kind': 'CONTEXT_CONTRAST'}
 
 
-def _v3_admitted_choice_contrast_edges(material, nodes, bindings, edges):
+def _v3_admitted_choice_contrast_edges(material, nodes, bindings, edges, *, written_time_only=False):
     """Draw only the unique complete choice pair already used by an admitted reading."""
     origins = _primary_structure_origins(material, nodes)
     sentences = _semantic_display_sentences(material)
@@ -3851,7 +3851,11 @@ def _v3_admitted_choice_contrast_edges(material, nodes, bindings, edges):
         if len(supported) != 1:
             continue
         left, right, pair = supported[0]
-        refs = [origins[anchor][0]['node_id'] for anchor in (left, right)]
+        pair_origins = [origins[anchor] for anchor in (left, right)]
+        if written_time_only and not any(not _CHOICE_LINK.search(quote) and _CHOICE_TIME_CONDITION.search(quote)
+                                         for *_, quote in pair_origins):
+            continue
+        refs = [node['node_id'] for node, *_ in pair_origins]
         if len(set(refs)) != 2 or any(len(origins[anchor][1]['evidence']) != 1 for anchor in (left, right)):
             continue
         units = [anchor.rsplit('.', 1)[0] for anchor in (left, right)]
@@ -4447,7 +4451,8 @@ def semantic_node_local_v4_relations(prepared, plan, bodies, packet, *, ordered_
         axes = _read_primary_structures(
             prepared, material, nodes, packet['primary_structures'], retained=bindings)
         if derive_contrast_edges and bindings:
-            _v3_admitted_choice_contrast_edges(material, nodes, bindings, edges)
+            _v3_admitted_choice_contrast_edges(material, nodes, bindings, edges,
+                                                 written_time_only=stage is None)
             if retained_axes is not None:
                 retained_axes.extend(bindings)
         if material.get('primary_structure_reading') == 'karen.v3':

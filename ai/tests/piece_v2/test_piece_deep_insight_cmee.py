@@ -10,7 +10,7 @@ from cocolon_meaning_experience_engine.piece_deep_insight import (
     validate_deep_insight_piece_source,
 )
 from cocolon_meaning_experience_engine.piece_semantic_admission import (
-    PIECE_FIELD_SLOTS_FORMAT, PieceModelInputV1, piece_model_source_plan,
+    PIECE_FIELD_SLOTS_FORMAT, PieceModelInputV1, generate_piece_model, piece_model_source_plan,
     prepare_piece_model_request, receive_piece_model_candidate,
 )
 from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE, PieceGenerationRequest
@@ -95,6 +95,31 @@ def test_selected_owner_answer_can_be_edited_with_its_written_condition_intact(s
     with pytest.raises(PieceContractError, match='piece_model_meaning_unassessed_or_changed'):
         generate_piece_candidate(source, authenticated_owner_id=OWNER,
             model_candidate=model_receipt(source, '私は、本を読みたい。'))
+
+
+def test_selected_answer_keeps_the_model_receipt_and_removes_a_copied_action_from_the_thought(source):
+    source = replace(source, answer_text='言い方を大切にしたい。')
+    model = model_receipt(source, source.answer_text, memo=MEMO + ACTION)
+    outcome = generate_piece_model(request_for(source), model)
+
+    assert json.loads(model.receipt.raw_output)['field_blocks']['memo_0'] == MEMO + ACTION
+    assert outcome.artifact.model_body_blocks == (MEMO + ACTION, ACTION, source.answer_text)
+    assert outcome.artifact.body_blocks == (MEMO, ACTION, source.answer_text)
+    assert len(outcome.artifact.realization_edits) == 1
+    assert generate_piece_candidate(source, authenticated_owner_id=OWNER, model_candidate=model)[
+        'content_payload']['body_blocks'] == [MEMO, ACTION, source.answer_text]
+
+
+@pytest.mark.parametrize('memo,action,answer', [
+    (MEMO + '私は友人に旅程を相談しませんでした。', ACTION, ANSWER),
+    (MEMO + ACTION, '私は友人に旅程を相談しませんでした。', ANSWER),
+    (MEMO + ACTION + ACTION, ACTION, ANSWER),
+    (MEMO + ACTION, ACTION, ANSWER + ACTION),
+])
+def test_recognizing_one_copied_action_does_not_admit_other_changes(source, memo, action, answer):
+    with pytest.raises(PieceContractError, match='piece_model_meaning_unassessed_or_changed'):
+        generate_piece_candidate(source, authenticated_owner_id=OWNER,
+            model_candidate=model_receipt(source, answer, memo=memo, action=action))
 
 
 @pytest.mark.parametrize('answer,changed_answer', [

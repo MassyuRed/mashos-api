@@ -40,6 +40,7 @@ class OwnedStore:
     def __init__(self, snapshot=None, current=None):
         self.snapshot = deepcopy(sample() if snapshot is None else snapshot)
         self.current = deepcopy(current)
+        self.retained = None
         self.calls = []
         self.saved = []
 
@@ -51,6 +52,13 @@ class OwnedStore:
             if items and payload.get('p_id') and items[0]['id'] != payload['p_id']:
                 items = []
             return dict(items=items, subscription_tier='free', matched=True, history_limit=2)
+        if name == 'analysis_cumulative_retained_read':
+            assert set(payload) == {'p_user_id', 'p_metadata_only'} and type(payload['p_metadata_only']) is bool
+            items = [deepcopy(self.retained)] if self.current is None and self.retained is not None else []
+            if payload['p_metadata_only']:
+                items = [{key: value for key, value in row.items() if key not in {'content_json', 'content_text'}}
+                         for row in items]
+            return dict(items=items, subscription_tier='free', matched=bool(items), history_limit=2)
         if name == 'analysis_cumulative_source_snapshot':
             return deepcopy(self.snapshot)
         assert name == 'analysis_cumulative_commit'
@@ -549,8 +557,16 @@ def test_background_manual_update_keeps_current_until_worker_commits_and_preserv
             assert body['content_text'] == before['content_text']
             pending.assert_awaited_once_with(OWNER, force=True, trigger='manual')
             assert len(acquired) == len(store.saved) == 1
-            # Source changes hide the old current rather than returning its previous artifact.
-            store.current = None
+            # Adding a record preserves the old artifact if its source cohort remains valid.
+            store.retained, store.current = store.current, None
+            retained = await client.get('/self-structure/latest?background=true&ensure=false', headers=headers)
+            assert retained.status_code == 200
+            assert retained.json()['has_visible_content'] and retained.json()['report_id'] == before['report_id']
+            assert retained.json()['content_text'] == before['content_text']
+            status = await client.get('/self-structure/latest/status', headers=headers)
+            assert status.json()['skip_reason'] == service.PREVIOUS_MAP_RETAINED
+            # Editing or deleting a source can invalidate that same artifact.
+            store.retained = None
             hidden = await client.get('/self-structure/latest?background=true&ensure=false', headers=headers)
             assert hidden.status_code == 200 and hidden.json()['has_visible_content'] is False
             assert hidden.json()['meta'] is None and hidden.json()['content_text'] is None

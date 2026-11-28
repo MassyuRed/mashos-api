@@ -1073,13 +1073,33 @@ def _realize_admitted_model_blocks(meaning, plan, blocks):
     return tuple(result), tuple(edits), eligible or ('short_essay',)
 
 
+def _remove_duplicated_deep_insight_action(meaning, blocks):
+    from .piece_deep_insight import PieceDeepInsightSourceSnapshot
+    from .piece_refined import PieceRefinedMeaning
+
+    if (type(meaning) is not PieceRefinedMeaning or type(meaning.source) is not PieceDeepInsightSourceSnapshot
+            or len(blocks) != 3):
+        return None
+    original = meaning.original
+    record = json.loads(meaning.source.original.saved_original_json)
+    memo, action = record['memo'], record['memo_action']
+    if (type(memo) is not str or type(action) is not str or not memo.endswith(('。', '！', '!'))
+            or not action.endswith(('。', '！', '!')) or blocks[0] != memo + action or blocks[1] != action):
+        return None
+    action_nodes = [node for node, evidence in zip(piece_text_nodes(original), original.evidence, strict=True)
+                    if evidence.field_path == 'memo_action']
+    if len(action_nodes) != 1 or action_nodes[0].value != action:
+        return None
+    edit = (original.envelope.source_record_id, action_nodes[0].node_id, 0, blocks[0], memo)
+    return (memo, blocks[1], blocks[2]), edit
+
+
 def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_format,
                                  realization_profile=None):
     """Adopt one fixed model body through the existing Piece artifact owner.
 
-    The model supplies no format, language, plan, recipe or safety verdict.
-    This function neither repairs a failed body nor invokes the finite author
-    as a replacement. Exact candidate bytes become the canonical artifact.
+    The model supplies only prose. Preserve its original blocks in the receipt
+    and require the source reader to validate every published proposition.
     """
     from piece_v2_content_policy import split_linked_original_action, validate_piece_model_preservation
     if type(body_blocks) is not tuple or not body_blocks or any(type(b) is not str for b in body_blocks):
@@ -1087,9 +1107,25 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
     text = '\n\n'.join(body_blocks)
     artifact = PieceArtifact(body_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                              'short_essay', ('short_essay',))
-    validate_piece_model_preservation(meaning, plan, artifact)
+    admitted_blocks, source_edits = body_blocks, ()
+    try:
+        validate_piece_model_preservation(meaning, plan, artifact)
+    except PieceContractError as error:
+        if (realization_profile != MODEL_MEMO_SELECTION_PROFILE
+                or error.detail != 'piece_model_meaning_unassessed_or_changed'):
+            raise
+        duplicate = _remove_duplicated_deep_insight_action(meaning, body_blocks)
+        if duplicate is None:
+            raise
+        check_existing_detectors(artifact.piece_text)
+        admitted_blocks, edit = duplicate
+        text = '\n\n'.join(admitted_blocks)
+        reduced = PieceArtifact(admitted_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
+                                'short_essay', ('short_essay',))
+        validate_piece_model_preservation(meaning, plan, reduced)
+        source_edits = (edit,)
     if realization_profile in MODEL_REALIZATION_PROFILES:
-        blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, body_blocks)
+        blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, admitted_blocks)
         from .piece_refined import PieceRefinedMeaning, PieceCorrectedSourceSnapshot
         from .piece_deep_insight import PieceDeepInsightSourceSnapshot
         if (type(meaning) is PieceRefinedMeaning
@@ -1118,7 +1154,7 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
         selected = choose_format(tier=tier, requested=requested_format,
             eligible=tuple(formats), recommended=recommended)
         return PieceModelRealizedArtifact(blocks, text, review.piece_text_hash, selected, tuple(formats),
-            realization_profile, body_blocks, edits)
+            realization_profile, body_blocks, source_edits + edits)
     if realization_profile is not None:
         raise unavailable('piece_model_realization_profile')
     selected = choose_format(tier=tier, requested=requested_format,

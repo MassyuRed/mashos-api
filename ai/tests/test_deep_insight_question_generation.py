@@ -2005,6 +2005,22 @@ def test_theme_does_not_repeat_the_choice_of_contact_channel(opening):
     assert result.candidate.text == f"大切な話をメッセージにするか直接伝えるか迷ったとき、{body}"
 
 
+@pytest.mark.parametrize(("draft", "body"), [
+    ("メッセージにするか直接伝えるかは、どちらにするかを何を決め手にしますか？",
+     "どちらにするかは、何を決め手にしますか？"),
+    ("メッセージで伝えるか、直接話すかは、どちらを選ぶかを、何を基準に決めますか？",
+     "どちらを選ぶかは、何を基準に決めますか？"),
+    ("相手とすぐには会えないとき、どちらにするかは何を決め手にしますか？",
+     "相手とすぐには会えないとき、どちらにするかは何を決め手にしますか？"),
+])
+def test_theme_reviews_the_choice_criterion_after_removing_a_repeated_pair(draft, body):
+    result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("contact_channel", "priority"))
+    assert [prompt for prompt, _ in calls] == [_THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE]
+    assert calls[1][1]["body"] == body
+    scene = "大切な話をメッセージにするか直接伝えるか迷ったとき"
+    assert result.candidate.text == f"{scene}、{body}"
+
+
 def test_theme_checks_repeat_against_the_displayed_text_after_removing_an_opening():
     draft = "誰かに助けを求めるかどうか、何を基準に決めますか？"
     choose = select_theme_angle("asking_help", "priority")

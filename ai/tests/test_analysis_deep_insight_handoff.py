@@ -364,7 +364,7 @@ def test_answer_changes_same_owners_saved_primary_structure_text_and_graph(sql_s
     db, rpc = sql_source
     for name in (*RECEIVED_MAP_MIGRATIONS[3:], '20261121134000_deep_insight_grounded_questions.sql',
                  '20261121194000_deep_insight_question_by_id.sql',
-                 '20261128053620_deep_insight_answer_refresh.sql'):
+                 '20261128054929_deep_insight_answer_refresh.sql'):
         sql_script(db, name)
     assert 'code' not in db.query('insert into auth.users values ($1)', [OWNER])
     assert 'code' not in db.query("insert into public.profiles values ($1,'premium')", [OWNER])
