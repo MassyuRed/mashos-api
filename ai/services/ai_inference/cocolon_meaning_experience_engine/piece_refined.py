@@ -28,6 +28,7 @@ from .emlis_answer_update import BoundFeelingCircumstance
 
 if TYPE_CHECKING:
     from .cores.analysis.source_adapter import AnalysisCircumstanceControl
+    from .piece_deep_insight import PieceDeepInsightAnswerMeaning, PieceDeepInsightSourceSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,10 +109,10 @@ class PieceActiveOriginalMeaning(PieceSourceMeaning):
 
 @dataclass(frozen=True, slots=True, repr=False)
 class PieceRefinedMeaning:
-    source: PieceRefinedSourceSnapshot | PieceCorrectedSourceSnapshot
+    source: PieceRefinedSourceSnapshot | PieceCorrectedSourceSnapshot | PieceDeepInsightSourceSnapshot
     source_ref: str
     original: PieceSourceMeaning | None
-    supplemental: PieceSupplementalMeaning | PieceCorrectionMeaning | None
+    supplemental: PieceSupplementalMeaning | PieceCorrectionMeaning | PieceDeepInsightAnswerMeaning | None
     prior_revisions: tuple[PieceSupplementalMeaning, ...] = ()
 
 
@@ -199,6 +200,9 @@ def _source_payload(source):
 
 
 def refined_source_ref(source) -> str:
+    from .piece_deep_insight import PieceDeepInsightSourceSnapshot, deep_insight_source_ref
+    if type(source) is PieceDeepInsightSourceSnapshot:
+        return deep_insight_source_ref(source)
     prefix = 'piece-corrected:' if type(source) is PieceCorrectedSourceSnapshot else 'piece-refined:'
     payload = _source_payload(source)
     if type(source) is PieceCorrectedSourceSnapshot:
@@ -817,7 +821,10 @@ def relative_feeling_anchor_blocks(meaning, plan):
 
 def build_refined_meaning(request):
     from piece_v2_generation import PieceSourceSnapshot
+    from .piece_deep_insight import PieceDeepInsightSourceSnapshot, build_deep_insight_piece_meaning
     source = request.source
+    if type(source) is PieceDeepInsightSourceSnapshot:
+        return build_deep_insight_piece_meaning(request)
     if type(source) is PieceCorrectedSourceSnapshot:
         _validate_corrected_source(source)
         original = source.original
@@ -937,6 +944,9 @@ def build_refined_meaning(request):
 
 
 def refined_source_roles(source):
+    from .piece_deep_insight import PieceDeepInsightSourceSnapshot, DEEP_INSIGHT_ANSWER_ROLE
+    if type(source) is PieceDeepInsightSourceSnapshot:
+        return ('ORIGINAL_USER_INPUT', DEEP_INSIGHT_ANSWER_ROLE)
     if type(source) is PieceCorrectedSourceSnapshot:
         return (('ORIGINAL_USER_INPUT','SUPPLEMENTAL_ANSWER','USER_INTERPRETATION_CORRECTION')
             if source.answer_sources else ('ORIGINAL_USER_INPUT','USER_INTERPRETATION_CORRECTION'))

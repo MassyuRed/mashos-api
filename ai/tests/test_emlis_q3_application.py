@@ -27,11 +27,19 @@ class Q3Database(Database):
         sql=(Path(__file__).parents[2]/'supabase/migrations/20261113120241_emlis_frame_feedback_target_context.sql').read_text()
         self.proc.stdin.write(json.dumps(dict(sql=sql,script=True))+'\n'); self.proc.stdin.flush()
         result=json.loads(self.proc.stdout.readline()); assert 'code' not in result,result
+        sql = (Path(__file__).parents[2] / 'supabase/migrations/20261128074959_emlis_thread_conflict_postgrest.sql').read_text()
+        self.proc.stdin.write(json.dumps(dict(sql=sql, script=True)) + '\n')
+        self.proc.stdin.flush()
+        result = json.loads(self.proc.stdout.readline())
+        assert 'code' not in result, result
     async def rpc(self,name,payload,**kwargs):
         assert name in {'emlis_thread_read','emlis_thread_commit','emlis_thread_context','emlis_thread_related_context'}
         args=','.join(f'{k} => ${i}' for i,k in enumerate(payload,1))
         params=[json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for v in payload.values()]
-        result=await asyncio.to_thread(self.query,f'select public.{name}({args}) as value',params,'service_role')
+        result=await asyncio.to_thread(self.query,f'select public.{name}({args}) as value',params,'service_role',error_message=True)
+        if result.get('code') == 'PGRST':
+            meta = json.loads(result['detail'])
+            return httpx.Response(meta['status'], headers=meta['headers'], json=json.loads(result['message']))
         return httpx.Response(400 if 'code' in result else 200,headers={'content-type':'application/json'},
           content=json.dumps(result if 'code' in result else result['rows'][0]['value'],ensure_ascii=False))
 
@@ -208,6 +216,47 @@ def test_database_rejects_wrong_round_and_duplicate_question_identity(qcase,qdb)
         response=run(qdb.rpc('emlis_thread_commit',dict(p_user_id=user,p_input_id=parent,p_thread_id=t['id'],p_expected_revision=t['revision'],p_source_snapshot=snapshot['original'],p_access_tier=snapshot['tier'],p_next=t,p_events=[event],p_finishing_attempt=None)))
         assert response.status_code==400 and response.json()['code'] in {'23514','23505'}
     assert run(s.get(user,parent))['issued_count']==1
+
+
+def test_stale_attempt_and_changed_history_return_conflict_without_writing(qcase, qdb, monkeypatch):
+    from copy import deepcopy
+    from emlis_thread_store import ThreadStoreError
+
+    user, parent, service = qcase
+    past, _ = past_record(qdb, user, monkeypatch)
+    dto = run(service.start(user, parent))
+    snapshot = run(service.store.read(user, thread_id=dto['thread_id']))
+    conflicts = []
+
+    async def capture_rpc(name, payload, **kwargs):
+        response = await qdb.rpc(name, payload, **kwargs)
+        if name == 'emlis_thread_commit':
+            conflicts.append((response.status_code, response.json()))
+        return response
+
+    monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', capture_rpc)
+
+    with pytest.raises(ThreadStoreError) as stale:
+        run(service.store.commit(user, snapshot, snapshot['thread'], [], finishing_attempt=str(uuid4())))
+    assert (stale.value.status, stale.value.code, stale.value.transient) == (409, 'thread_conflict', False)
+
+    old_guard = qdb.query(
+        'select md5(public.emlis_parent_source(emotion)::text) as digest '
+        'from public.emotions emotion where id = $1', [past]
+    )['rows'][0]['digest']
+    next_thread = deepcopy(snapshot['thread'])
+    next_thread['data']['context_guards'] = [[past, old_guard, 0]]
+    event = next(event for event in snapshot['events'] if event['kind'] == 'OBSERVATION')
+    with pytest.raises(ThreadStoreError) as changed:
+        run(service.store.commit(user, snapshot, next_thread, [event]))
+    assert (changed.value.status, changed.value.code, changed.value.transient) == (409, 'thread_conflict', False)
+    assert conflicts == [
+        (409, {'code': '40001', 'message': 'emlis_attempt_stale', 'details': None, 'hint': None}),
+        (409, {'code': '40001', 'message': 'emlis_context_meaning_changed', 'details': None, 'hint': None}),
+    ]
+    saved = run(service.store.read(user, thread_id=dto['thread_id']))
+    assert saved['thread'] == snapshot['thread']
+    assert saved['events'] == snapshot['events']
 
 def test_history_deletion_after_no_change_checkpoint_cannot_restore_old_body(qcase,qdb,monkeypatch):
     from emlis_thread_store import ThreadStoreError

@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from piece_v2_contract import PieceContractError, normalize_visibility_scope
 from piece_v2_store import cancel_piece_preview
-from piece_v2_visual import (LEGACY_THEME_IDS, THEME_IDS, build_selected_visual_recipe,
+from piece_v2_visual import (ANDROID_BITMAP_RENDERER_VERSION, EXPANDED_PALETTE_RENDERERS, LEGACY_THEME_IDS, THEME_IDS, build_selected_visual_recipe,
                             require_piece_visual_selection, visual_selection_from_recipe)
 from piece_v2_runtime_control import (
     require_piece_feature_enabled, validate_piece_preview_runtime, wants_piece_publication,
@@ -516,7 +516,7 @@ def _preview_runtime(request: Request) -> tuple[int, str]:
 
 
 def _renderer_preferences(request: Request) -> tuple[str | None, tuple[str, ...] | None]:
-    """Negotiate only the explicitly deployed iOS bitmap brand versions.
+    """Negotiate explicitly supported production bitmap renderers.
 
     Missing/older clients retain the configured renderer. The client cannot
     select an arbitrary renderer, renew an artifact, or rewrite a saved row.
@@ -526,6 +526,9 @@ def _renderer_preferences(request: Request) -> tuple[str | None, tuple[str, ...]
     values = request.headers.getlist('x-piece-renderer')
     if len(values) > 1:
         raise PieceContractError('PIECE_REQUEST_INVALID')
+    android = ANDROID_BITMAP_RENDERER_VERSION
+    if configured in ('piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2') and values == [android]:
+        return android, (android,)
     if (configured in (None, 'piece.rn_bitmap_renderer.ios.v1')
             and values == ['piece.rn_bitmap_renderer.ios.v2']):
         return 'piece.rn_bitmap_renderer.ios.v2', (
@@ -654,7 +657,7 @@ async def create_preview(request: Request) -> JSONResponse:
                     or _visual_text_size(request) != text_size or _visual_background_style(request) != background
                     or _visual_decorations(request) != decorations):
                 raise PieceContractError('PIECE_CONFLICT')
-        capable_renderer = renderer == 'piece.rn_bitmap_renderer.ios.v2'
+        capable_renderer = renderer in EXPANDED_PALETTE_RENDERERS
         selection = value['visual_selection']
         require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
                                        visual_editor=editor and capable_renderer,
@@ -681,7 +684,7 @@ async def create_preview(request: Request) -> JSONResponse:
             rpc=features.wrap(_preview_rpc))
         features.require()
         public = _preview_public_response(result)
-        capable_renderer = public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+        capable_renderer = public['renderer_version'] in EXPANDED_PALETTE_RENDERERS
         expanded = expanded_palette and capable_renderer
         require_piece_visual_selection(visual_selection_from_recipe(public['visual_recipe']), expanded_palette=expanded,
                                        visual_editor=editor and capable_renderer,
@@ -746,7 +749,7 @@ async def mutate_preview_visual(preview_id: str, request: Request) -> JSONRespon
             rpc=features.wrap(_preview_rpc))
         features.require()
         public = _preview_public_response(result)
-        capable_renderer = public['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+        capable_renderer = public['renderer_version'] in EXPANDED_PALETTE_RENDERERS
         expanded = expanded_palette and capable_renderer
         require_piece_visual_selection(visual_selection_from_recipe(public['visual_recipe']), expanded_palette=expanded,
                                        visual_editor=editor and capable_renderer,

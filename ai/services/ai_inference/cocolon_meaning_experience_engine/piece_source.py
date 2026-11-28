@@ -133,11 +133,26 @@ class PieceSourceMeaning:
     selection_evidence: tuple[PieceSelectionEvidence, ...] = ()
     selection_contexts: tuple[MeaningNode, ...] = ()
     bound_complete_clause: bool = False
+    original_memo_only: bool = False
+
+
+def saved_action_link_marker(memo: str, action: str) -> str | None:
+    """Read an explicit link between two single-paragraph authored fields."""
+    if re.search(r'[\r\n]', memo + action) or not memo.rstrip().endswith(('。', '！', '!')):
+        return None
+    link = re.fullmatch(r'(?P<marker>だから[、，,])[^。！？!?「」『』]+[。！!]', action.rstrip())
+    if link is None:
+        return None
+    marker = link['marker']
+    return marker if marker not in memo and action.count(marker) == 1 else None
 
 
 def piece_source_text(meaning: PieceSourceMeaning) -> str:
     """Text coordinates belong to the source field, not its metadata frame."""
+    from .piece_deep_insight import PieceDeepInsightAnswerMeaning
     from .piece_refined import PieceSupplementalMeaning, PieceCorrectionMeaning
+    if type(meaning) is PieceDeepInsightAnswerMeaning:
+        return meaning.selected_source.answer_text
     if type(meaning) is PieceCorrectionMeaning:
         return meaning.source_snapshot.correction.explanation
     if type(meaning) is PieceSupplementalMeaning:
@@ -1419,7 +1434,8 @@ def _piece_editorial_roles(sentences: tuple[str, ...],
     return roles
 
 
-def _saved_field_projection(source, *, bound_complete_clause=False) -> tuple[tuple[str, int, int], ...]:
+def _saved_field_projection(source, *, bound_complete_clause=False,
+                            original_memo_only=False) -> tuple[tuple[str, int, int], ...]:
     """Map exact stored field strings into a non-narrative text working view.
 
     Offsets in PieceSentenceMeaning are view-relative. EvidenceRef scalar
@@ -1458,11 +1474,6 @@ def _saved_field_projection(source, *, bound_complete_clause=False) -> tuple[tup
         text = record[key]
         if text is None or not text.strip():
             continue
-        # Complete action lines in the last nonempty field may omit stops.
-        # An unfinished earlier field cannot borrow the next field.
-        _sentences(text, allow_unpunctuated_account=(
-            key == 'memo_action' or not (record['memo_action'] or '').strip()),
-            bound_complete_clause=bound_complete_clause and key == 'memo')
         if parts:
             cursor += 2
         spans.append((key, cursor, cursor + len(text)))
@@ -1470,6 +1481,15 @@ def _saved_field_projection(source, *, bound_complete_clause=False) -> tuple[tup
         cursor += len(text)
     if not parts or source.original_text != '\n\n'.join(parts):
         raise unavailable('saved_original_projection_mismatch')
+    if original_memo_only:
+        if len(spans) != 2 or bound_complete_clause:
+            raise unavailable('piece_memo_selection_invalid')
+        spans = spans[:1]
+    for index, (key, start, end) in enumerate(spans):
+        # The selected final field may omit stops under the existing account
+        # grammar. An earlier field cannot borrow the next field's ending.
+        _sentences(source.original_text[start:end], allow_unpunctuated_account=index == len(spans) - 1,
+                   bound_complete_clause=bound_complete_clause and key == 'memo')
     return tuple(spans)
 
 
@@ -1610,6 +1630,11 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
     if type(meaning) is PieceSemanticSnapshotV1:
         validate_snapshot_self(meaning)
         return
+    from .piece_deep_insight import PieceDeepInsightAnswerMeaning, build_deep_insight_answer_meaning
+    if type(meaning) is PieceDeepInsightAnswerMeaning:
+        if meaning != build_deep_insight_answer_meaning(meaning.selected_source):
+            raise unavailable('piece_deep_insight_source_binding')
+        return
     from .piece_refined import (PieceSupplementalMeaning, validate_supplemental_meaning,
         PieceActiveOriginalMeaning, validate_active_original_meaning,
         PieceCorrectionMeaning, validate_correction_meaning)
@@ -1637,14 +1662,16 @@ def validate_piece_saved_fields(meaning: PieceSourceMeaning) -> None:
         source, expected_owner_id=source.owner_id,
         expected_saved_input_id=source.saved_input_id,
         expected_source_version=source.source_version,
-        bound_complete_clause=meaning.bound_complete_clause)
+        bound_complete_clause=meaning.bound_complete_clause,
+        original_memo_only=meaning.original_memo_only)
     if expected != meaning:
         raise unavailable('piece_saved_field_binding')
 
 
 def build_piece_source_meaning(source: object, *, expected_owner_id: str,
                                expected_saved_input_id: str,
-                               expected_source_version: str, bound_complete_clause: bool = False) -> PieceSourceMeaning:
+                               expected_source_version: str, bound_complete_clause: bool = False,
+                               original_memo_only: bool = False) -> PieceSourceMeaning:
     # Import the established internal snapshot/grammar owner, not its output
     # compiler. Its complete-sentence admission is retained without a raw fallback.
     from piece_v2_generation import PieceSourceSnapshot, _sentences
@@ -1664,10 +1691,13 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     if source.source_role != 'original' or source.source_stage not in (
             'normal_observation', 'pre_question_observation'):
         raise unavailable('source_role_or_stage_not_yet_supported')
-    fields = (_saved_field_projection(source, bound_complete_clause=bound_complete_clause)
+    if original_memo_only and source.saved_original_json is None:
+        raise unavailable('piece_memo_selection_invalid')
+    fields = (_saved_field_projection(source, bound_complete_clause=bound_complete_clause,
+                                     original_memo_only=original_memo_only)
               if source.saved_original_json is not None
               else (('original_text', 0, len(source.original_text)),))
-    text = source.original_text
+    text = source.original_text[:fields[-1][2]]
     check_existing_detectors(text)
     sentences = _sentences(text, allow_unpunctuated_account=source.saved_original_json is not None,
                            bound_complete_clause=bound_complete_clause)
@@ -1780,4 +1810,5 @@ def build_piece_source_meaning(source: object, *, expected_owner_id: str,
     return PieceSourceMeaning(envelope, graph, tuple(evidence), tuple(meanings), aliases,
                               references, evaluations, scopes,
                               source if source.saved_original_json is not None else None,
-                              selections, selection_evidence, selection_nodes, bound_complete_clause)
+                              selections, selection_evidence, selection_nodes, bound_complete_clause,
+                              original_memo_only)

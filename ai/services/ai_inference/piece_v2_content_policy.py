@@ -659,6 +659,28 @@ def _piece_model_topic_continuations(meaning, plan):
     return topics, frozenset(continuations)
 
 
+def split_linked_original_action(meaning, paragraph):
+    """Recover the two separately checked fields of an authored connection."""
+    from cocolon_meaning_experience_engine.piece_source import (
+        PieceSourceMeaning, piece_source_text, saved_action_link_marker,
+    )
+
+    if (type(meaning) is not PieceSourceMeaning or meaning.saved_snapshot is None
+            or meaning.original_memo_only):
+        return None
+    memo, field_separator, action = piece_source_text(meaning).partition('\n\n')
+    if not field_separator:
+        return None
+    marker = saved_action_link_marker(memo, action)
+    if marker is None:
+        return None
+    starts = tuple(re.finditer(r'(?<=[。！!])' + re.escape(marker), paragraph))
+    if len(starts) != 1:
+        return None
+    start = starts[0].start()
+    return paragraph[:start], paragraph[start:]
+
+
 def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_feeling_anchor=False):
     """Author-free whole-body review for the bounded model Piece arm.
 
@@ -675,6 +697,9 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
         relative_feeling_anchor_blocks,
     )
     from piece_v2_contract import validate_piece_text_binding
+    from cocolon_meaning_experience_engine.piece_deep_insight import (
+        PieceDeepInsightAnswerMeaning, PieceDeepInsightSourceSnapshot,
+    )
     if (type(artifact) is not PieceArtifact or artifact.format_type != 'short_essay'
             or artifact.eligible_formats != ('short_essay',)):
         raise unavailable('piece_model_artifact_binding')
@@ -686,15 +711,16 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
                 or plan.source_roles != refined_source_roles(meaning.source)
                 or plan.eligible_formats != ('short_essay',)):
             raise unavailable('piece_model_source_binding')
-        if type(meaning.source) is PieceCorrectedSourceSnapshot:
-            # Every child must belong to this corrected composite, not merely
+        if type(meaning.source) in (PieceCorrectedSourceSnapshot, PieceDeepInsightSourceSnapshot):
+            # Every child must belong to this composite, not merely
             # validate against some other individually legitimate snapshot.
-            from cocolon_meaning_experience_engine.piece_refined import build_refined_meaning
+            from cocolon_meaning_experience_engine.piece_refined import build_refined_meaning, _plans
             from cocolon_meaning_experience_engine.piece_v1c import PieceGenerationRequest
             original = meaning.source.original
-            expected = build_refined_meaning(PieceGenerationRequest('piece-corrected-review',
+            expected = build_refined_meaning(PieceGenerationRequest('piece-composite-review',
                 meaning.source, original.owner_id, original.saved_input_id, original.source_version))
-            if meaning != expected:
+            if meaning != expected or (type(meaning.source) is PieceDeepInsightSourceSnapshot
+                    and plan != _plans(expected)):
                 raise unavailable('piece_model_source_binding')
         parts = refined_meaning_parts(meaning, plan)
     else:
@@ -702,14 +728,20 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
     if validate_feeling_circumstance_body(meaning, artifact.body_blocks):
         check_existing_detectors(artifact.piece_text)
         return
+    body_blocks = artifact.body_blocks
+    if len(body_blocks) == 1:
+        body_blocks = split_linked_original_action(meaning, body_blocks[0]) or body_blocks
     anchor = relative_feeling_anchor_blocks(meaning, plan) if allow_bound_feeling_anchor else None
     offset = 0
     for part, child_plan in parts:
         source_blocks = _piece_model_source_blocks(part, child_plan)
-        blocks = artifact.body_blocks[offset:offset + len(source_blocks)]
+        blocks = body_blocks[offset:offset + len(source_blocks)]
         offset += len(source_blocks)
         if len(blocks) != len(source_blocks):
             raise unavailable('piece_model_block_partition')
+        if (type(part) is PieceDeepInsightAnswerMeaning and part.bound_complete_clause
+                and blocks != source_blocks):
+            raise unavailable('piece_model_meaning_unassessed_or_changed')
         # Only a completed Piece may resolve this relative time expression.
         # Check the exact licensed surface before reviewing the original answer.
         if anchor is not None and part is meaning.supplemental and blocks == (anchor[1],):
@@ -741,7 +773,7 @@ def validate_piece_model_preservation(meaning, plan, artifact, *, allow_bound_fe
                     validate_source_meaning_preservation(part, child_plan, child, _model_register=True)
             except PieceContractError:
                 raise unavailable('piece_model_meaning_unassessed_or_changed') from None
-    if offset != len(artifact.body_blocks):
+    if offset != len(body_blocks):
         raise unavailable('piece_model_block_partition')
     check_existing_detectors(artifact.piece_text)
 
@@ -785,7 +817,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         piece_text_nodes, piece_source_text, _scoped_self_topic, _qualified_self_topic,
         _scoped_finite_self_person_action,
     )
-    from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact, PieceArtifactPlan
+    from cocolon_meaning_experience_engine.piece_v1c import PieceArtifact, PieceArtifactPlan, _WRITTEN_CALM_STATE
 
     def reject():
         raise unavailable('piece_meaning_not_preserved')
@@ -793,7 +825,9 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
     from cocolon_meaning_experience_engine.piece_refined import (
         PieceSupplementalMeaning, PieceCorrectionMeaning, PieceActiveOriginalMeaning, supplemental_complete_self_account,
         supplemental_statement_view)
-    if (type(meaning) not in (PieceSourceMeaning, PieceSupplementalMeaning, PieceCorrectionMeaning, PieceActiveOriginalMeaning) or type(plan) is not PieceArtifactPlan
+    from cocolon_meaning_experience_engine.piece_deep_insight import PieceDeepInsightAnswerMeaning
+    if (type(meaning) not in (PieceSourceMeaning, PieceSupplementalMeaning, PieceCorrectionMeaning,
+            PieceActiveOriginalMeaning, PieceDeepInsightAnswerMeaning) or type(plan) is not PieceArtifactPlan
             or type(artifact) is not PieceArtifact):
         reject()
     validate_piece_saved_fields(meaning)
@@ -886,6 +920,12 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
         if match is None:
             return False
         return re.fullmatch(anchor(match['prefix']) + r'決めて(?:いません|いない)。', visible) is not None
+
+    def same_written_calm_register(source, visible):
+        # The whole written lead-in, present state, and emphasis remain bound.
+        match = _WRITTEN_CALM_STATE.fullmatch(source)
+        return match is not None and re.fullmatch(
+            anchor(match['stem']) + r'(?:いる|います)' + re.escape(match['stop']), visible) is not None
 
     def same_literal_self_register(source, visible):
         # Reuse the qualified literal self-account owner, including its
@@ -1148,6 +1188,7 @@ def validate_source_meaning_preservation(meaning, plan, artifact, *, _model_regi
                         and visible == node.value + '。')
                 if (re.fullmatch(anchor(node.value), visible) is None
                         and not replacement_statement
+                        and not same_written_calm_register(node.value, visible)
                         and not (_model_register and (
                             same_undecided(node.value, visible)
                             or same_finite_model_context(node_id, node.value, visible)

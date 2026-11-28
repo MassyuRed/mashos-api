@@ -285,10 +285,14 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
         PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, build_refined_meaning, _plans,
         realize_refined_piece_artifact, validate_refined_preservation,
     )
+    from cocolon_meaning_experience_engine.piece_deep_insight import PieceDeepInsightSourceSnapshot
     refined = type(source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot)
-    if type(source) is not PieceSourceSnapshot and not refined:
+    deep_insight = type(source) is PieceDeepInsightSourceSnapshot
+    if type(source) is not PieceSourceSnapshot and not (refined or deep_insight):
         raise unavailable('source_type')
-    original = source.original if refined else source
+    if deep_insight and model_candidate is None:
+        raise unavailable('piece_deep_insight_model_required')
+    original = source.original if refined or deep_insight else source
     if type(original) is not PieceSourceSnapshot:
         raise unavailable('source_type')
     request = PieceGenerationRequest(
@@ -308,14 +312,20 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
     # this request. Rebind the returned meaning to the complete original,
     # including saved fields/metadata, using the existing CMEE source owner.
     # Hash consistency inside an artifact cannot prove that source relation.
-    expected_meaning = build_refined_meaning(request) if refined else build_piece_source_meaning(
-        source, expected_owner_id=authenticated_owner_id,
-        expected_saved_input_id=original.saved_input_id,
-        expected_source_version=original.source_version)
+    if model_candidate is not None:
+        import json
+        from cocolon_meaning_experience_engine.piece_semantic_admission import piece_model_source_plan
+        profile = json.loads(model_candidate.receipt.metadata_json).get('realization_profile')
+        expected_meaning, expected_plan = piece_model_source_plan(request, realization_profile=profile)
+    else:
+        expected_meaning = build_refined_meaning(request) if refined else build_piece_source_meaning(
+            source, expected_owner_id=authenticated_owner_id,
+            expected_saved_input_id=original.saved_input_id,
+            expected_source_version=original.source_version)
+        expected_plan = _plans(expected_meaning) if refined else compile_piece_artifact_plan(expected_meaning)
     if (type(outcome.source_meaning) is not type(expected_meaning)
             or outcome.source_meaning != expected_meaning):
         raise unavailable('piece_engine_source_binding')
-    expected_plan = _plans(expected_meaning) if refined else compile_piece_artifact_plan(expected_meaning)
     if (type(outcome.artifact_plan) is not type(expected_plan)
             or outcome.artifact_plan != expected_plan):
         raise unavailable('piece_engine_plan_binding')
@@ -329,8 +339,6 @@ def generate_piece_candidate(source: PieceSourceSnapshot, *, authenticated_owner
         # The actual model bytes, rather than a finite-author replay, are the
         # canonical body. Rehashed substitutions must still match the bound
         # receipt and pass complete independent source/body preservation.
-        import json
-        profile = json.loads(model_candidate.receipt.metadata_json).get('realization_profile')
         if profile is not None:
             from cocolon_meaning_experience_engine.piece_v1c import (
                 realize_piece_model_artifact, PieceModelRealizedArtifact)

@@ -30,6 +30,21 @@ RUNTIME = {'ttl_seconds': 600, 'renderer_version': 'synthetic-renderer.v1'}
 VISUAL_PATH = PREVIEW_PATH + '/' + INPUT
 
 
+def test_android_bitmap_renderer_requires_exact_native_negotiation(composition_env):
+    ios = 'piece.rn_bitmap_renderer.ios.v1'
+    android = 'piece.rn_bitmap_renderer.android.v1'
+    app = enabled(preview_runtime={'ttl_seconds': 600, 'renderer_version': ios})
+
+    def preferences(headers):
+        return api._renderer_preferences(Request({'type': 'http', 'app': app, 'headers': headers}))
+
+    assert preferences([]) == (ios, (ios,))
+    assert preferences([(b'x-piece-renderer', android.encode())]) == (android, (android,))
+    assert preferences([(b'x-piece-renderer', b'piece.rn_android_bitmap_preview.prototype.v1')]) == (ios, (ios,))
+    with pytest.raises(PieceContractError):
+        preferences([(b'x-piece-renderer', android.encode()), (b'x-piece-renderer', ios.encode())])
+
+
 @pytest.mark.parametrize('enabled_preview', [False, True])
 def test_composed_cancel_reuses_existing_owner_cleanup_even_when_generation_is_off(
         composition_env, monkeypatch, enabled_preview):

@@ -35,6 +35,19 @@ from .piece_source import (
 
 _WRITTEN_ACCOUNT_END = re.compile(
     r'(?:です|ます|でした|ました|ません|だった|ない|なかった|かった|しい|た|だ)[。！？!?]$')
+# A written current state is complete on its own or after a written return
+# or arrival. Keep the whole clause as context without inferring a reason,
+# replacing the subject, or turning a selected emotion into a sentence.
+_WRITTEN_CALM_STATE = re.compile(
+    r'(?P<stem>(?:[^。！？!?「」『』、，,\r\n]*(?:帰って|戻って|着いて)[、，,][ \t\u3000]*)?'
+    r'(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*)?'
+    r'(?:今は?[、，,]?[ \t\u3000]*)?落ち着いて)(?:いる|います)(?P<stop>[。！!])')
+_WRITTEN_MOOD_STATE = re.compile(
+    r'(?:(?:私|わたし|僕|ぼく|俺|おれ)は[、，,]?[ \t\u3000]*)?'
+    r'(?:(?:今日|今朝|今)は?[、，,]?[ \t\u3000]*)?(?:なんだか|何だか)?'
+    r'気分が(?:良い|よい|いい|悪い)(?:です)?[。！!]')
+_WRITTEN_TENTATIVE_REASON = re.compile(
+    r'[^。！？!?「」『』\r\n]+(?:た|だ|ない)から(?:だろう|でしょう)[。！!]')
 # Finite inflections of the already-written reservation context. Keep these
 # local to literal retention: a polite negative is no less uncertain, and
 # 迷っている is complete without admitting arbitrary plain verb endings.
@@ -356,6 +369,11 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
             or _PLAIN_SURU_ACCOUNT_END.search(node.value)
             or (saved is not None and _is_unpunctuated_account(node.value))
             for node in text_nodes)
+        written_state_account = saved is not None and (
+            all(_WRITTEN_CALM_STATE.fullmatch(node.value) or _WRITTEN_MOOD_STATE.fullmatch(node.value)
+                for node in text_nodes)
+            or (len(text_nodes) == 2 and _WRITTEN_MOOD_STATE.fullmatch(text_nodes[0].value)
+                and _WRITTEN_TENTATIVE_REASON.fullmatch(text_nodes[1].value)))
         self_insight_account = False
         literal_account = False
         scoped_action_account = False
@@ -424,7 +442,8 @@ def compile_piece_artifact_plan(meaning: PieceSourceMeaning) -> PieceArtifactPla
         # source words through the existing duty/author; this grants neither
         # a selected state, a wish nor declaration eligibility.
         from .piece_refined import supplemental_feeling_account, supplemental_complete_self_account
-        if not (meaning.bound_complete_clause or feeling_account or self_insight_account or literal_account
+        if not (meaning.bound_complete_clause or feeling_account or written_state_account
+                or self_insight_account or literal_account
                 or scoped_action_account or past_self_account
                 or supplemental_feeling_account(meaning) or supplemental_complete_self_account(meaning)):
             raise unavailable('expression_meaning_not_admitted')
@@ -947,6 +966,8 @@ def _paired_self_continuations(meaning: PieceSourceMeaning,
 
 
 MODEL_REALIZATION_PROFILE = 'piece.cmee_realization.v2'
+MODEL_MEMO_SELECTION_PROFILE = 'piece.cmee_realization.v3'
+MODEL_REALIZATION_PROFILES = (MODEL_REALIZATION_PROFILE, MODEL_MEMO_SELECTION_PROFILE)
 
 
 def _model_realization_clauses(text):
@@ -1052,27 +1073,68 @@ def _realize_admitted_model_blocks(meaning, plan, blocks):
     return tuple(result), tuple(edits), eligible or ('short_essay',)
 
 
+def _remove_duplicated_deep_insight_action(meaning, blocks):
+    from .piece_deep_insight import PieceDeepInsightSourceSnapshot
+    from .piece_refined import PieceRefinedMeaning
+
+    if (type(meaning) is not PieceRefinedMeaning or type(meaning.source) is not PieceDeepInsightSourceSnapshot
+            or len(blocks) != 3):
+        return None
+    original = meaning.original
+    record = json.loads(meaning.source.original.saved_original_json)
+    memo, action = record['memo'], record['memo_action']
+    if (type(memo) is not str or type(action) is not str or not memo.endswith(('。', '！', '!'))
+            or not action.endswith(('。', '！', '!')) or blocks[0] != memo + action or blocks[1] != action):
+        return None
+    action_nodes = [node for node, evidence in zip(piece_text_nodes(original), original.evidence, strict=True)
+                    if evidence.field_path == 'memo_action']
+    if len(action_nodes) != 1 or action_nodes[0].value != action:
+        return None
+    edit = (original.envelope.source_record_id, action_nodes[0].node_id, 0, blocks[0], memo)
+    return (memo, blocks[1], blocks[2]), edit
+
+
 def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_format,
                                  realization_profile=None):
     """Adopt one fixed model body through the existing Piece artifact owner.
 
-    The model supplies no format, language, plan, recipe or safety verdict.
-    This function neither repairs a failed body nor invokes the finite author
-    as a replacement. Exact candidate bytes become the canonical artifact.
+    The model supplies only prose. Preserve its original blocks in the receipt
+    and require the source reader to validate every published proposition.
     """
-    from piece_v2_content_policy import validate_piece_model_preservation
+    from piece_v2_content_policy import split_linked_original_action, validate_piece_model_preservation
     if type(body_blocks) is not tuple or not body_blocks or any(type(b) is not str for b in body_blocks):
         raise unavailable('piece_model_body_shape')
     text = '\n\n'.join(body_blocks)
     artifact = PieceArtifact(body_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                              'short_essay', ('short_essay',))
-    validate_piece_model_preservation(meaning, plan, artifact)
-    if realization_profile == MODEL_REALIZATION_PROFILE:
-        blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, body_blocks)
+    admitted_blocks, source_edits = body_blocks, ()
+    try:
+        validate_piece_model_preservation(meaning, plan, artifact)
+    except PieceContractError as error:
+        if (realization_profile != MODEL_MEMO_SELECTION_PROFILE
+                or error.detail != 'piece_model_meaning_unassessed_or_changed'):
+            raise
+        duplicate = _remove_duplicated_deep_insight_action(meaning, body_blocks)
+        if duplicate is None:
+            raise
+        check_existing_detectors(artifact.piece_text)
+        admitted_blocks, edit = duplicate
+        text = '\n\n'.join(admitted_blocks)
+        reduced = PieceArtifact(admitted_blocks, text, hashlib.sha256(text.encode()).hexdigest(),
+                                'short_essay', ('short_essay',))
+        validate_piece_model_preservation(meaning, plan, reduced)
+        source_edits = (edit,)
+    if realization_profile in MODEL_REALIZATION_PROFILES:
+        blocks, edits, source_formats = _realize_admitted_model_blocks(meaning, plan, admitted_blocks)
         from .piece_refined import PieceRefinedMeaning, PieceCorrectedSourceSnapshot
+        from .piece_deep_insight import PieceDeepInsightSourceSnapshot
         if (type(meaning) is PieceRefinedMeaning
-                and type(meaning.source) is PieceCorrectedSourceSnapshot):
+                and type(meaning.source) in (PieceCorrectedSourceSnapshot, PieceDeepInsightSourceSnapshot)):
             source_formats = tuple(fmt for fmt in source_formats if fmt in plan.eligible_formats)
+        if realization_profile == MODEL_MEMO_SELECTION_PROFILE and len(blocks) == 2:
+            paragraph = ''.join(blocks)
+            if split_linked_original_action(meaning, paragraph) == blocks:
+                blocks = (paragraph,)
         text = '\n\n'.join(blocks)
         review = PieceArtifact(blocks, text, hashlib.sha256(text.encode()).hexdigest(),
                               'short_essay', ('short_essay',))
@@ -1092,7 +1154,7 @@ def realize_piece_model_artifact(meaning, plan, *, body_blocks, tier, requested_
         selected = choose_format(tier=tier, requested=requested_format,
             eligible=tuple(formats), recommended=recommended)
         return PieceModelRealizedArtifact(blocks, text, review.piece_text_hash, selected, tuple(formats),
-            realization_profile, body_blocks, edits)
+            realization_profile, body_blocks, source_edits + edits)
     if realization_profile is not None:
         raise unavailable('piece_model_realization_profile')
     selected = choose_format(tier=tier, requested=requested_format,
@@ -1369,6 +1431,9 @@ def generate_piece_artifact(request: PieceGenerationRequest) -> PieceEngineOutco
             or not isinstance(request.request_id, str) or not request.request_id.strip()):
         return PieceEngineOutcome(EngineStatus.REJECTED, ('piece_request_out_of_scope',))
     from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, generate_refined_piece
+    from .piece_deep_insight import PieceDeepInsightSourceSnapshot
+    if type(request.source) is PieceDeepInsightSourceSnapshot:
+        return PieceEngineOutcome(EngineStatus.UNAVAILABLE, ('piece_deep_insight_model_required',))
     if type(request.source) in (PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot):
         return generate_refined_piece(request)
     meaning = None

@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator, model_validator
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
@@ -42,6 +42,10 @@ class Question(BaseModel):
     answered_at: datetime | None
 
 
+class HistoryQuestion(Question):
+    piece_source_input_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
 class DeepInsightState(BaseModel):
     can_use_theme: bool
     can_use_records: bool = True
@@ -51,7 +55,7 @@ class DeepInsightState(BaseModel):
     theme_available_today: bool
     theme_next_available_at: datetime | None = None
     theme_notification_enabled: bool = False
-    history: list[Question]
+    history: list[HistoryQuestion]
 
 
 class _StoredState(DeepInsightState):
@@ -358,9 +362,34 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     router = APIRouter(prefix="/deep-insight")
 
     @router.get("", response_model=DeepInsightState)
-    async def read_deep_insight(response: Response, owner: str = Depends(_owner)):
+    async def read_deep_insight(response: Response, request: Request, owner: str = Depends(_owner)):
+        from piece_v2_runtime_control import piece_feature_flags_for_app
+        from piece_v2_source_adapter import eligible_deep_insight_history_source
+
         response.headers["Cache-Control"] = "no-store"
-        return _stored(_StoredState, await _rpc("deep_insight_state", {"p_user_id": owner}))
+        state = _stored(_StoredState, await _rpc("deep_insight_state", {"p_user_id": owner}))
+        answered_records = [question for question in state.history if question.lane == "records"
+                            and question.answer_text is not None and question.answered_at is not None]
+        if (state.can_use_records and answered_records
+                and piece_feature_flags_for_app(request.app)["piece_v2_preview_enabled"]):
+            try:
+                links = await _rpc("deep_insight_piece_history_links", {
+                    "p_owner": owner, "p_question_ids": [str(question.id) for question in answered_records],
+                })
+            except HTTPException:
+                # Keep the ordinary DeepInsight history readable without the optional Piece selector.
+                return state
+            for question in answered_records:
+                try:
+                    input_id = UUID(eligible_deep_insight_history_source(
+                        owner, str(question.id), question.answer_text, question.answered_at.isoformat(),
+                        links.get(str(question.id)),
+                    ))
+                except (ValueError, TypeError, AttributeError):
+                    continue
+                if input_id.int != 0:
+                    question.piece_source_input_id = input_id
+        return state
 
     @router.get("/questions/{question_id}", response_model=Question)
     async def read_deep_insight_question(question_id: UUID, response: Response, owner: str = Depends(_owner)):

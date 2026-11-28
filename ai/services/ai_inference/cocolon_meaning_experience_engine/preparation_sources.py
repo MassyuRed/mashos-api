@@ -164,7 +164,8 @@ def _corrected_piece_model_material(source, *, expected_owner_id, tier):
     return material
 
 
-def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') -> dict:
+def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free',
+                         original_memo_only: bool = False) -> dict:
     """Source-only material for one explicitly selected Piece model attempt.
 
     Keep legacy piece_material bytes/IDs unchanged. This projection does not
@@ -174,12 +175,17 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
     from piece_v2_contract import canonical_json_bytes
     from piece_v2_generation import PieceSourceSnapshot
     from .piece_refined import PieceRefinedSourceSnapshot, PieceCorrectedSourceSnapshot, refined_source_ref
+    from .piece_deep_insight import (
+        PieceDeepInsightSourceSnapshot, build_deep_insight_answer_meaning, deep_insight_source_ref,
+        SOURCE_KIND, SOURCE_VERSION, ANSWER_FIELD, DEEP_INSIGHT_ANSWER_ROLE,
+    )
     from .emlis_thread_source import freeze_supplemental_answer
 
     if type(source) is PieceCorrectedSourceSnapshot:
         return _corrected_piece_model_material(source, expected_owner_id=expected_owner_id, tier=tier)
     refined = type(source) is PieceRefinedSourceSnapshot
-    original = source.original if refined else source
+    deep_insight = type(source) is PieceDeepInsightSourceSnapshot
+    original = source.original if refined or deep_insight else source
     material = piece_material(original, expected_owner_id=expected_owner_id, tier=tier)
     sources = material['sources']
     if refined:
@@ -233,6 +239,19 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
                 raise ValueError('piece_model_refined_binding')
             sources.append(latest)
         source_ref = refined_source_ref(source)
+    elif deep_insight:
+        answer = build_deep_insight_answer_meaning(source)
+        sources.append({
+            'source_id': source.question_id, 'source_version': SOURCE_VERSION,
+            'source_commitment': source.source_commitment,
+            'role': DEEP_INSIGHT_ANSWER_ROLE, 'original': None,
+            'text_fields': {ANSWER_FIELD: source.answer_text},
+            'envelope_id': answer.envelope.envelope_id,
+            'recorded_at': source.answered_at, 'parent_record_id': original.saved_input_id,
+            'evidence': [dict(asdict(ref), literal=answer.envelope.raw_utf8[ref.utf8_start:ref.utf8_end]
+                    .decode('utf-8'), coordinate_space='SOURCE_ENVELOPE') for ref in answer.evidence],
+        })
+        source_ref = deep_insight_source_ref(source)
     else:
         if type(source) is not PieceSourceSnapshot:
             raise ValueError('piece_model_source_type')
@@ -288,7 +307,7 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
                                           scalar_ranges=group) for group in groups)
     for item in (() if active_update else sources):
         for field, text in item['text_fields'].items():
-            if not isinstance(text, str):
+            if not isinstance(text, str) or (original_memo_only and field == 'memo_action'):
                 continue
             offset = 0
             for line in text.splitlines(keepends=True):
@@ -300,12 +319,16 @@ def piece_model_material(source, *, expected_owner_id: str, tier: str = 'free') 
     if not partition or len(partition) > 3:
         raise ValueError('piece_model_block_partition')
     material.update(task='PIECE_MODEL_BODY', control={
-        'source_stage': 'refined_observation' if refined else original.source_stage,
+        'source_stage': SOURCE_KIND if deep_insight else 'refined_observation' if refined else original.source_stage,
         'source_ref': source_ref, 'block_partition': partition,
         'format_type': 'short_essay', 'language': 'ja', 'model_body_only': True,
         'authorship': 'USER_OWNED_COCOLON_SHAPED',
         'source_selections_are_not_written_propositions': True,
     })
+    if original_memo_only:
+        material['control']['original_memo_only'] = True
+    if deep_insight and answer.bound_complete_clause:
+        material['control']['preserve_deep_insight_answer_literal'] = True
     if refined and source.feeling_circumstance is not None:
         from .piece_refined import _validate_feeling_circumstance_source
         _validate_feeling_circumstance_source(source)
@@ -328,6 +351,8 @@ def piece_model_field_slots(material):
     Names/order are server-owned. Literal values stay exact Unicode scalar
     slices, not expected author text or model-provided source locators.
     """
+    from .piece_deep_insight import SOURCE_KIND, DEEP_INSIGHT_ANSWER_ROLE
+
     try:
         sources = material['sources']
         control = material['control']
@@ -336,6 +361,9 @@ def piece_model_field_slots(material):
                 or control['model_body_only'] is not True or type(sources) is not list
                 or ([s['role'] for s in sources] not in (
                     ['ORIGINAL_INPUT'], ['ORIGINAL_INPUT', 'SUPPLEMENTAL_ANSWER'])
+                    and not (control.get('source_stage') == SOURCE_KIND
+                        and [s['role'] for s in sources] == ['ORIGINAL_INPUT', DEEP_INSIGHT_ANSWER_ROLE]
+                        and sources[1]['parent_record_id'] == sources[0]['source_id'])
                     and not (control.get('interpretation_correction') is True
                         and len(sources) >= 2 and sources[0]['role'] == 'ORIGINAL_INPUT'
                         and all(s['role'] in {'USER_INTERPRETATION_CORRECTION','SUPPLEMENTAL_ANSWER'} for s in sources[1:])

@@ -47,6 +47,8 @@ THEMES = {
 }
 LEGACY_THEME_IDS = ('soft_paper', 'quiet_night')
 THEME_IDS = tuple(THEMES)
+ANDROID_BITMAP_RENDERER_VERSION = 'piece.rn_bitmap_renderer.android.v1'
+EXPANDED_PALETTE_RENDERERS = frozenset(('piece.rn_bitmap_renderer.ios.v2', ANDROID_BITMAP_RENDERER_VERSION))
 THEMES.update({
     'sage_paper': {'canvas': '#E5EEE0', 'surface': '#E5EEE0', 'text': '#273727',
                    'secondary': '#4A5D48', 'accent': '#4C674B', 'border': '#B4C6AC',

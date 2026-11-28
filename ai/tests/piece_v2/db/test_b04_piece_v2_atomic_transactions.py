@@ -32,7 +32,7 @@ from piece_v2_store import save_piece, set_piece_visibility, delete_piece
 _B2 = runpy.run_path(str(Path(__file__).with_name('test_b02_piece_v2_foundation.py')))
 _M3 = _ROOT / 'supabase/migrations/20260808_003_piece_v2_rls_and_staging.sql'
 _M4 = _ROOT / 'supabase/migrations/20260808_004_piece_v2_atomic_functions.sql'
-_ACCOUNT_WITHDRAWAL = _ROOT / 'supabase/migrations/20261128053404_piece_account_withdrawal.sql'
+_ACCOUNT_WITHDRAWAL = _ROOT / 'supabase/migrations/20261128054210_piece_account_withdrawal.sql'
 _OWNER, _VIEWER = _B2['_OWNER'], _B2['_VIEWER']
 _SAVE_FIELDS = ('p_owner_user_id','p_preview_id','p_expected_preview_revision',
                 'p_piece_text_hash','p_content_payload_hash','p_visual_recipe_hash',

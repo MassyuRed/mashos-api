@@ -331,7 +331,7 @@ def test_application_default_off_and_explicit_configuration_is_stable(monkeypatc
 @pytest.mark.parametrize('returned_model', [sources.NINE_B_MODEL, MODEL])
 def test_9b_selector_reports_its_model_identity_without_4b_fallback(monkeypatch, refined, returned_model):
     from cocolon_meaning_experience_engine.piece_semantic_admission import prepare_piece_model_request
-    from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE
 
     environment(monkeypatch)
     monkeypatch.setenv('PIECE_MODEL_SOURCE', sources.CMEE_9B_SELECTOR)
@@ -352,7 +352,7 @@ def test_9b_selector_reports_its_model_identity_without_4b_fallback(monkeypatch,
     real_source = sources.SharedPieceModelSource
     monkeypatch.setattr(sources, 'SharedPieceModelSource',
                         lambda **kw: real_source(**kw, transport=httpx.MockTransport(handler)))
-    assert sources.application_piece_realization_profile() == MODEL_REALIZATION_PROFILE
+    assert sources.application_piece_realization_profile() == MODEL_MEMO_SELECTION_PROFILE
     receipt = run(sources.application_piece_model_source()(value, source_request=source_request))
     assert len(observed) == 1
     metadata = json.loads(receipt.metadata_json)
@@ -361,7 +361,7 @@ def test_9b_selector_reports_its_model_identity_without_4b_fallback(monkeypatch,
     if returned_model == sources.NINE_B_MODEL:
         assert receipt.status == 'CANDIDATE_UNREVIEWED'
         assert receipt.raw_output == raw
-        assert metadata['realization_profile'] == MODEL_REALIZATION_PROFILE
+        assert metadata['realization_profile'] == MODEL_MEMO_SELECTION_PROFILE
     else:
         assert receipt.status == 'PROVIDER_ERROR'
         assert receipt.raw_output is None

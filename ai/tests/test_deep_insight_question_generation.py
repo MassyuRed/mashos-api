@@ -70,7 +70,7 @@ def reason_premise(requested="どんな理由から", **changes):
 
 
 def run(original, plan, question=BODY, *, reading=None, extraction=None, premise=None,
-        comparison=None, alternative=None):
+        comparison=None, alternative=None, rewrite=None):
     prepared, sources = prepare_question_material(original, lane="records", theme=None)
     calls = []
 
@@ -82,7 +82,7 @@ def run(original, plan, question=BODY, *, reading=None, extraction=None, premise
             assert alternative is not None
             response = alternative
         elif system in (WRITE_SYSTEM_MESSAGE, _RECORD_ALTERNATIVE_WRITE_MESSAGE):
-            response = {"question": question}
+            response = {"question": rewrite if "rewrite" in payload and rewrite is not None else question}
         elif system.startswith(_PRIOR_ANSWER_EVIDENCE_MESSAGE):
             response = extraction
         elif system.startswith(_PRIOR_ANSWER_PREMISE_MESSAGE):
@@ -121,6 +121,26 @@ def test_plan_write_read_are_separate_and_receipt_resolves_original():
     assert receipt["start"] == 2 and original_text[receipt["start"]: receipt["end"]] == QUOTE
     assert receipt["literal_sha256"] == hashlib.sha256(QUOTE.encode()).hexdigest()
     assert candidate.question_key == "deep-insight-target-" + receipt["target_key"]
+
+
+@pytest.mark.parametrize("vague", ["どんなときですか？", "そのとき、どう思いましたか？"])
+def test_record_question_rewrites_an_unbound_body_before_issue(vague):
+    text = "発表前には話す順番を何度も確認した"
+    plan = ask(focus="CONDITION", quote=text, ask="話す順番を一度確認するだけで進められる条件")
+    specific = "話す順番を一度確認するだけで発表に進めるのは、どんなときですか？"
+    original = material(source(text + "。"))
+
+    result, calls = run(original, plan, vague, rewrite=specific)
+    assert result.disposition == "selected"
+    assert result.candidate.text == f"「{text}」と書いていましたが、{specific}"
+    assert [prompt for prompt, _ in calls] == [
+        PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, READ_SYSTEM_MESSAGE,
+    ]
+    assert calls[2][1]["ask"] == plan["ask"] and calls[3][1]["question"] == result.candidate.text
+
+    result, calls = run(original, plan, vague)
+    assert result.disposition == "rejected" and result.rejection_stage == "writer"
+    assert [prompt for prompt, _ in calls] == [PLAN_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE, WRITE_SYSTEM_MESSAGE]
 
 
 def test_correction_plan_uses_its_own_source_key_and_exact_replacement_range():
@@ -334,6 +354,34 @@ def test_reader_can_refuse_a_paraphrase_of_a_dismissed_emlis_question():
                         reading={"verdict": "reject", "new_information": False})
     assert result.disposition == "rejected" and result.candidate is None
     assert len(calls) == 3 and "skipped_emlis_questions" in calls[2][0]
+
+
+@pytest.mark.parametrize("quote", ["話が途切れて、少し寂しかった", "少し寂しかった"])
+def test_records_do_not_ask_again_for_the_trigger_of_a_written_feeling(quote):
+    original = material(source("話が途切れて、少し寂しかった。"))
+    result, calls = run(original, ask(quote=quote))
+    assert result.candidate is None
+    assert result.plan_rejection_reason == "known_reason"
+    assert [system for system, _ in calls] == [PLAN_SYSTEM_MESSAGE]
+
+
+@pytest.mark.parametrize(("record", "quote"), [
+    ("話が途切れた。帰り道では少し寂しかった。", "帰り道では少し寂しかった"),
+    ("あの話題について、少し寂しかった。", "あの話題について、少し寂しかった"),
+])
+def test_records_can_ask_about_a_feeling_when_its_trigger_is_unstated(record, quote):
+    original = material(source(record))
+    result, _ = run(original, ask(quote=quote))
+    assert result.candidate.text == f"「{quote}」と書いていましたが、{BODY}"
+
+
+def test_records_can_ask_about_a_new_condition_in_the_same_scene():
+    original = material(source("話が途切れて、少し寂しかった。"))
+    quote = "話が途切れて、少し寂しかった"
+    question = "また話が途切れたとき、相手のどんな反応なら話を続けやすいですか？"
+    plan = ask(focus="CONDITION", quote=quote, ask="話が途切れた後に話を続けやすい相手の反応")
+    result, _ = run(original, plan, question)
+    assert result.candidate.text == f"「{quote}」と書いていましたが、{question}"
 
 
 def test_record_is_not_retained_if_its_dismissal_cannot_fit(monkeypatch):
@@ -1943,6 +1991,34 @@ def test_theme_preserves_a_new_scope_in_an_opening_about_asking_for_help():
     result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("asking_help", "priority"))
     assert result.candidate.text == f"{calls[1][1]['scene']}、{draft}"
     assert calls[1][1]["body"] == draft
+
+
+@pytest.mark.parametrize("opening", [
+    "大切な話をメッセージにするか、直接伝えるか迷うときに",
+    "大切な話をメッセージで伝えるか、直接話すか迷ったとき",
+])
+def test_theme_does_not_repeat_the_choice_of_contact_channel(opening):
+    choose = select_theme_angle("contact_channel", "priority")
+    body = "どちらにするかは、何を決め手にしますか？"
+    result, calls = theme_run("人間関係", f"{opening}、{body}", choose_theme=choose)
+    assert calls[1][1]["body"] == body
+    assert result.candidate.text == f"大切な話をメッセージにするか直接伝えるか迷ったとき、{body}"
+
+
+@pytest.mark.parametrize(("draft", "body"), [
+    ("メッセージにするか直接伝えるかは、どちらにするかを何を決め手にしますか？",
+     "どちらにするかは、何を決め手にしますか？"),
+    ("メッセージで伝えるか、直接話すかは、どちらを選ぶかを、何を基準に決めますか？",
+     "どちらを選ぶかは、何を基準に決めますか？"),
+    ("相手とすぐには会えないとき、どちらにするかは何を決め手にしますか？",
+     "相手とすぐには会えないとき、どちらにするかは何を決め手にしますか？"),
+])
+def test_theme_reviews_the_choice_criterion_after_removing_a_repeated_pair(draft, body):
+    result, calls = theme_run("人間関係", draft, choose_theme=select_theme_angle("contact_channel", "priority"))
+    assert [prompt for prompt, _ in calls] == [_THEME_WRITE_SYSTEM_MESSAGE, _THEME_READ_SYSTEM_MESSAGE]
+    assert calls[1][1]["body"] == body
+    scene = "大切な話をメッセージにするか直接伝えるか迷ったとき"
+    assert result.candidate.text == f"{scene}、{body}"
 
 
 def test_theme_checks_repeat_against_the_displayed_text_after_removing_an_opening():

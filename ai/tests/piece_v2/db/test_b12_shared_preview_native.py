@@ -213,8 +213,9 @@ def test_composed_generated_preview_private_save_replay_and_owner_detail(databas
     ('7', {'background_style': 'gradient'}),
     ('8', {'background_style': 'color_wash', 'frame_style': 'double_line', 'accent_style': 'corner_marks'}),
 ])
+@pytest.mark.parametrize('android', [False, True], ids=['ios', 'android'])
 def test_composed_visual_recipe_is_saved_and_exported_from_the_same_native_row(database, monkeypatch,
-                                                                                   palette, decoration):
+                                                                                   palette, decoration, android):
     conn, _, _ = database
     request, _, state = _save_harness(database, monkeypatch, tier='premium')
     migrations = _B5['_B4']['_ROOT'] / 'supabase/migrations'
@@ -226,21 +227,24 @@ def test_composed_visual_recipe_is_saved_and_exported_from_the_same_native_row(d
         '20261124062800_piece_v2_visual_gradient_background.sql',
     ):
         conn.execute((migrations / name).read_text())
-    if palette == '8':
+    if palette == '8' or android:
         conn.execute((migrations / '20261125084000_piece_v2_visual_decorations.sql').read_text())
+    if android:
+        conn.execute((migrations / '20261128054617_piece_v2_android_appearance_renderer.sql').read_text())
     request['visual_selection'].update(
         theme_id='sage_paper', font_style_id='serif_readable',
         text_color_id='neutral_ink', text_alignment='center', text_size='large',
         **decoration)
     app = _save_application('shared', export=True)
     v1, v2 = 'piece.rn_bitmap_renderer.ios.v1', 'piece.rn_bitmap_renderer.ios.v2'
+    renderer = 'piece.rn_bitmap_renderer.android.v1' if android else v2
     app.state.piece_preview_runtime['renderer_version'] = v1
-    state['expected_renderers'] = (v1, v2)
+    state['expected_renderers'] = (renderer,) if android else (v1, v2)
 
     async def call(method, resource, *, client_palette=None, key=None, body=None):
         version = client_palette or palette
         headers = {'Authorization': _B5['AUTH'], 'X-Piece-Palette': '7' if version == '8' else version,
-                   'X-Piece-Renderer': v2}
+                   'X-Piece-Renderer': renderer}
         if version == '8':
             headers['X-Piece-Decoration-Palette'] = '8'
         if key is not None:
@@ -260,6 +264,7 @@ def test_composed_visual_recipe_is_saved_and_exported_from_the_same_native_row(d
     preview = created.json()
     record_id = preview['preview_id']
     recipe = preview['visual_recipe']
+    assert preview['renderer_version'] == renderer
     assert recipe['theme'] == {'theme_id': 'sage_paper', 'theme_version': 1, **decoration}
     assert recipe['font_style']['text_size'] == 'large'
     assert recipe['font_style']['font_style_id'] == 'serif_readable'

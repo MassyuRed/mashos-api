@@ -11,12 +11,13 @@ from datetime import datetime, timezone
 
 from piece_v2_content_policy import choose_format
 from piece_v2_contract import PieceContractError, canonical_json_bytes
-from piece_v2_source_adapter import PieceSavedSourceAdapter, project_saved_refined_fence
+from piece_v2_source_adapter import PieceSavedSourceAdapter
 from piece_v2_preview_service import (
-    _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage,
+    _HANDOFF_TYPES, _resolve_handoff, _source_ref_from_lineage, _canonical_handoff_lineage, _expected_source_state,
 )
 from piece_v2_store import _preview_content, save_piece, save_request_arguments
-from piece_v2_visual import build_selected_visual_recipe, require_piece_visual_selection, visual_selection_from_recipe
+from piece_v2_visual import (EXPANDED_PALETTE_RENDERERS, build_selected_visual_recipe,
+                            require_piece_visual_selection, visual_selection_from_recipe)
 
 SAVE_STATUS = {
     'PIECE_REQUEST_INVALID': 400, 'PIECE_AUTH_REQUIRED': 401,
@@ -133,7 +134,7 @@ class PieceSaveService:
             except PieceContractError:
                 _fail('PIECE_HASH_MISMATCH')
             selection = visual_selection_from_recipe(row['visual_recipe'])
-            capable_renderer = row['renderer_version'] == 'piece.rn_bitmap_renderer.ios.v2'
+            capable_renderer = row['renderer_version'] in EXPANDED_PALETTE_RENDERERS
             require_piece_visual_selection(selection, expanded_palette=expanded_palette and capable_renderer,
                                            visual_editor=visual_editor and capable_renderer,
                                            visual_alignment=visual_alignment and capable_renderer,
@@ -170,10 +171,7 @@ class PieceSaveService:
                 _fail('PIECE_VISUAL_SELECTION_NOT_ALLOWED')
             return await save_piece(authenticated_user_id=owner, request=value,
                 idempotency_key=idempotency_key, rpc=self._rpc, expected_subscription_tier=tier,
-                expected_source_state={'original': current.original.original_payload(),
-                    'thread_id': current.thread_id, 'thread_revision': current.thread_revision,
-                    'lineage': _canonical_handoff_lineage(current),
-                    **project_saved_refined_fence(current)})
+                expected_source_state=_expected_source_state(current, lineage))
         except PieceContractError as exc:
             _fail(exc.code if exc.code in SAVE_STATUS else 'PIECE_TEMPORARILY_UNAVAILABLE')
         except Exception:

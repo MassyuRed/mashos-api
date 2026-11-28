@@ -126,10 +126,43 @@ def test_model_body_differs_from_old_author_and_remains_fixed_after_sql_save(sav
     _evidence('normal-request-' + tier, result, seen)
 
 
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('variant,lead_in,ending,accepted', [
+    ('', '帰って', 'いる', True),
+    ('-polite', '帰って', 'います', True),
+    ('-new-cause', '帰ったおかげで', 'います', False),
+    ('-negated', '帰って', 'いません', False),
+])
+def test_written_present_calm_state_is_kept_without_inventing_a_reason(
+        saved_piece_db, monkeypatch, tier, variant, lead_in, ending, accepted):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+    from test_cmee_piece_request_saved_pipeline import _prepare_saved_request, _finish_saved_request
+
+    memo = '短い散歩から帰って、今は落ち着いている。'
+    body = f'短い散歩から{lead_in}、今は落ち着いて{ending}。'
+    record = dict(id='written-present-calm' + variant,
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
+        memo=memo, memo_action='', category=['健康'], emotions=['平穏'],
+        emotion_details=[dict(type='平穏', strength='medium')])
+    seen = _provider(monkeypatch, record['id'], [body],
+        realization_profile=MODEL_MEMO_SELECTION_PROFILE, qwen9b=True)
+    state = _prepare_saved_request(saved_piece_db, monkeypatch, record, tier=tier, receive_questions=False)
+    if not accepted:
+        with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            _finish_saved_request(saved_piece_db, monkeypatch, state)
+        assert len(seen) == 1
+        return
+    result = _finish_saved_request(saved_piece_db, monkeypatch, state,
+        visual_selection=dict(theme_id='quiet_night', aspect_ratio=None, branding_mode=None))
+    assert result['detail']['piece_text'] == body
+    assert result['source_unchanged'] and result['emlis_unchanged']
+    assert result['quota_consumptions'] == 1
+    _evidence(record['id'] + '-' + tier, result, seen)
+
+
 @pytest.mark.parametrize('wrong_polarity', (False, True))
-@pytest.mark.parametrize('qwen9b', (False, True), ids=['legacy-label', '9b'])
 def test_two_field_past_self_accounts_keep_model_bytes_and_negation(saved_piece_db, monkeypatch,
-                                                                wrong_polarity, qwen9b):
+                                                                wrong_polarity):
     from cocolon_meaning_experience_engine.piece_v1c import MODEL_REALIZATION_PROFILE
 
     memo = '私は、急いで結論を出したくありませんでした。私は、自分で確かめてから決めたいと思いました。'
@@ -141,7 +174,7 @@ def test_two_field_past_self_accounts_keep_model_bytes_and_negation(saved_piece_
         memo=memo, memo_action=action, category=['生活','価値観'], emotions=['自己理解'],
         emotion_details=[dict(type='自己理解', strength='medium')])
     seen = _provider(monkeypatch, case_id, [memo, model_action],
-        realization_profile=MODEL_REALIZATION_PROFILE, qwen9b=qwen9b)
+        realization_profile=MODEL_REALIZATION_PROFILE)
     if wrong_polarity:
         with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
             _run_saved_request(saved_piece_db, monkeypatch, record, tier='free')
@@ -151,6 +184,86 @@ def test_two_field_past_self_accounts_keep_model_bytes_and_negation(saved_piece_
         assert result['source_unchanged'] and result['emlis_unchanged']
         assert result['quota_consumptions'] == 1
     assert len(seen) == 1
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('invent_cause', [False, True])
+def test_ordinary_piece_uses_thought_without_appending_independent_action(
+        saved_piece_db, monkeypatch, tier, invent_cause):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+    from test_cmee_piece_request_saved_pipeline import _prepare_saved_request, _finish_saved_request
+
+    memo = '今日はなんだか気分が良い。仕事の問題が解決したからだろう。'
+    action = '在宅勤務になった。'
+    author = '今日はなんだか気分が良い。在宅勤務になったので仕事の問題が解決したからだろう。' if invent_cause else memo
+    record = dict(id='separate-thought-and-action',
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
+        memo=memo, memo_action=action, category=['仕事'], emotions=['喜び'],
+        emotion_details=[dict(type='喜び', strength='medium')])
+    seen = _provider(monkeypatch, record['id'], [author],
+        realization_profile=MODEL_MEMO_SELECTION_PROFILE, qwen9b=True)
+    state = _prepare_saved_request(saved_piece_db, monkeypatch, record, tier=tier, receive_questions=False)
+    if invent_cause:
+        with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            _finish_saved_request(saved_piece_db, monkeypatch, state)
+    else:
+        result = _finish_saved_request(saved_piece_db, monkeypatch, state,
+            visual_selection=dict(theme_id='quiet_night', aspect_ratio=None, branding_mode=None))
+        assert result['detail']['piece_text'] == memo
+        assert result['original']['memo_action'] == action
+        assert result['source_unchanged'] and result['emlis_unchanged']
+        assert result['quota_consumptions'] == 1
+        _evidence(record['id'] + '-' + tier, result, seen)
+    assert len(seen) == 1
+    assert action not in seen[0]['messages'][1]['content']
+    assert list(seen[0]['prepared']['control']['field_slots']) == ['memo_0']
+
+
+def test_ordinary_piece_can_use_a_record_with_only_action(saved_piece_db, monkeypatch):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+
+    action = '私は同僚に資料の確認を頼みました。'
+    record = dict(id='ordinary-action-only',
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
+        memo='', memo_action=action, category=['仕事'], emotions=['自己理解'],
+        emotion_details=[dict(type='自己理解', strength='medium')])
+    seen = _provider(monkeypatch, record['id'], [action],
+        realization_profile=MODEL_MEMO_SELECTION_PROFILE, qwen9b=True)
+    result = _run_saved_request(saved_piece_db, monkeypatch, record, tier='free')
+    assert result['detail']['piece_text'] == action
+    assert list(seen[0]['prepared']['control']['field_slots']) == ['memo_action_0']
+
+
+@pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
+@pytest.mark.parametrize('keep_link', [True, False])
+def test_ordinary_piece_keeps_an_explicit_action_connection_in_one_paragraph(
+        saved_piece_db, monkeypatch, tier, keep_link):
+    from cocolon_meaning_experience_engine.piece_v1c import MODEL_MEMO_SELECTION_PROFILE
+    from test_cmee_piece_request_saved_pipeline import _prepare_saved_request, _finish_saved_request
+
+    memo = '提出を守りたいが同僚も手伝いたい。提出までに作業を終えられないと分かったので、今日は資料だけ確認すると決めた。'
+    action = 'だから、連絡は断って三ページを確認した。'
+    record = dict(id='linked-thought-and-action' if keep_link else 'linked-thought-and-action-changed',
+        created_at=saved_piece_db.query("SELECT (now()-interval '5 seconds')::text AS stamp")['rows'][0]['stamp'],
+        memo=memo, memo_action=action, category=['仕事'], emotions=['平穏'],
+        emotion_details=[dict(type='平穏', strength='medium')])
+    model_action = action if keep_link else action.removeprefix('だから、')
+    seen = _provider(monkeypatch, record['id'], [memo, model_action],
+        realization_profile=MODEL_MEMO_SELECTION_PROFILE, qwen9b=True)
+    state = _prepare_saved_request(saved_piece_db, monkeypatch, record, tier=tier, receive_questions=False)
+    if not keep_link:
+        with pytest.raises(PieceContractError, match='PIECE_SOURCE_NOT_ELIGIBLE'):
+            _finish_saved_request(saved_piece_db, monkeypatch, state)
+        assert len(seen) == 1
+        return
+    result = _finish_saved_request(saved_piece_db, monkeypatch, state,
+        visual_selection=dict(theme_id='quiet_night', aspect_ratio=None, branding_mode=None))
+    assert list(seen[0]['prepared']['control']['field_slots']) == ['memo_0', 'memo_action_1']
+    assert result['detail']['content_payload']['body_blocks'] == [memo + action]
+    assert result['detail']['piece_text'] == memo + action
+    assert result['source_unchanged'] and result['emlis_unchanged']
+    assert result['quota_consumptions'] == 1
+    _evidence(record['id'] + '-' + tier, result, seen)
 
 
 @pytest.mark.parametrize('case_id,answer', [('Q2-A', '私は寂しかった。'), ('Q2-C', '今は、私は嬉しい。')])

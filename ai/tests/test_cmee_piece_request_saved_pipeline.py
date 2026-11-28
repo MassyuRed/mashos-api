@@ -75,7 +75,7 @@ def _bind_saved_request_io(db, monkeypatch, owner, token):
     monkeypatch.setattr(emlis_thread_store, 'sb_post_rpc', db.rpc)
 
 
-def _prepare_saved_request(db, monkeypatch, record, *, tier):
+def _prepare_saved_request(db, monkeypatch, record, *, tier, receive_questions=True):
     """Qualify a newly saved original before acquiring any Piece candidate.
 
     The JSON state retains the SQL-returned seven fields and real Emlis
@@ -96,6 +96,9 @@ def _prepare_saved_request(db, monkeypatch, record, *, tier):
         "INSERT INTO public.emotions VALUES ($1,$2,$3::timestamptz AT TIME ZONE 'UTC',$4,$5,$6,$7,$8::jsonb)",
         [source_id, owner, record['created_at'], record['memo'], record['memo_action'],
          record['category'], record['emotions'], json.dumps(record['emotion_details'], ensure_ascii=False)])
+    if not receive_questions:
+        assert 'code' not in db.query(
+            'UPDATE public.emotions SET receive_emlis_questions = false WHERE id = $1', [source_id])
     original = db.query('SELECT public.emlis_parent_source(e) AS original FROM public.emotions e WHERE id=$1',
                         [source_id])['rows'][0]['original']
     assert set(original) == set(record)
@@ -125,7 +128,7 @@ def _prepare_saved_request(db, monkeypatch, record, *, tier):
                 emlis_before=emlis_before, events_before=events_before, counts=counts)
 
 
-def _finish_saved_request(db, monkeypatch, state):
+def _finish_saved_request(db, monkeypatch, state, *, visual_selection=None):
     """Resume the same qualified source through preview/save/owner reread.
 
     All source and lineage checks happen before candidate acquisition. The
@@ -165,8 +168,11 @@ def _finish_saved_request(db, monkeypatch, state):
         return {key: row[key] for key in _REPLAY_COLUMNS} if row else None
 
     async def rpc(name, args):
-        assert name in ('piece_issue_preview_v2', 'piece_save_v2')
-        counts['preview_rpc' if name == 'piece_issue_preview_v2' else 'save_rpc'] += 1
+        rpc_counts = {'piece_issue_preview_v2': 'preview_rpc', 'piece_save_v2': 'save_rpc'}
+        if visual_selection is not None:
+            rpc_counts['piece_mutate_preview_visual_v2'] = 'visual_rpc'
+        key = rpc_counts[name]
+        counts[key] = counts.get(key, 0) + 1
         params = [json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for v in args.values()]
         named = ','.join(f'{k} => ${n}' for n, k in enumerate(args, 1))
         result = db.query(f'SELECT public.{name}({named}) AS value', params, 'service_role', error_message=True)
@@ -208,6 +214,17 @@ def _finish_saved_request(db, monkeypatch, state):
                  expected_subscription_tier=tier, load_record=load_preview, rpc=rpc)
     first = asyncio.run(preview.issue_original('Bearer ' + token, request, **issue))
     assert counts['piece_author'] == counts['piece_review'] == counts['preview_rpc'] == 1
+    if visual_selection is not None:
+        edited = asyncio.run(PiecePreviewService(source_adapter=adapter).mutate_original_visual(
+            'Bearer ' + token, authenticated_user_id=owner, preview_id=first['preview_id'],
+            request=dict(expected_preview_revision=first['preview_revision'], visual_selection=visual_selection),
+            expected_subscription_tier=tier, load_record=load_preview, rpc=rpc,
+            allowed_renderers=issue['allowed_renderers']))
+        assert edited['preview_revision'] == first['preview_revision'] + 1
+        assert edited['visual_recipe_hash'] != first['visual_recipe_hash']
+        for key in ('piece_text', 'piece_text_hash', 'content_payload', 'content_payload_hash'):
+            assert edited[key] == first[key]
+        first = edited
     saved_request = dict(preview_id=first['preview_id'], expected_preview_revision=first['preview_revision'],
                          **{k: first[k] for k in ('piece_text_hash', 'content_payload_hash', 'visual_recipe_hash')})
 
@@ -243,7 +260,10 @@ def _finish_saved_request(db, monkeypatch, state):
         if key in first:
             assert first[key] == detail[key]
     assert '記録を受け取りました。' not in detail['piece_text']
-    assert counts == dict(synthetic_emlis_provider=1, piece_author=1, piece_review=1, preview_rpc=1, save_rpc=2)
+    expected_counts = dict(synthetic_emlis_provider=1, piece_author=1, piece_review=1, preview_rpc=1, save_rpc=2)
+    if visual_selection is not None:
+        expected_counts.update(piece_review=2, visual_rpc=1)
+    assert counts == expected_counts
     assert db.query('SELECT count(*)::int AS n FROM public.piece_quota_consumptions WHERE owner_user_id=$1', [owner])['rows'][0]['n'] == 1
     assert db.query('SELECT public.emlis_parent_source(e) AS original FROM public.emotions e WHERE id=$1', [source_id])['rows'][0]['original'] == original
     assert emlis_before == db.query('SELECT to_jsonb(t) AS row FROM public.emlis_input_threads t WHERE user_id=$1', [owner])

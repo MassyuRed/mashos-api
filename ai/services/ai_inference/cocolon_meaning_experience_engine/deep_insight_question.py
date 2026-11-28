@@ -38,6 +38,7 @@ _THEME_QUOTED_QUESTION = re.compile(r"「([^「」\r\n]+)」")
 _THEME_SINGLE_QUOTED_QUESTION = re.compile(r"\{[ \t]*'question'[ \t]*:[ \t]*'([^'\r\n]+)'[ \t]*\}")
 _THEME_PLAIN_QUESTION = re.compile(r"[ぁ-んァ-ヶ一-龯][^\r\n{}「」\"'：:]*[？?]")
 _THEME_SCENE_COMMA = re.compile(r"[、,，]")
+_THEME_HESITATION_END = re.compile(r"(?:迷う|迷った|迷っている)(?:とき|時|場合|際|場面)(?:に|は|で)?\Z")
 _THEME_ASSISTANT_NAME = re.compile(r"emlis|エムリス", re.IGNORECASE)
 _THEME_MAX_PAIR_RECHECKS = 6
 _THEME_HISTORY_BATCH_SIZE = 32
@@ -56,6 +57,10 @@ _THEME_ADVICE_QUESTION = re.compile(
     r"(?:べき(?:です|でしょう)か|"
     r"のが(?:適切|妥当)(?:です|でしょう)か|"
     r"べき(?:タイミング|時期)は[、, ]*(?:どんな(?:とき|時)|いつ)(?:です|でしょう)か)[？?]\Z"
+)
+_THEME_CHOICE_CRITERION_PARTICLE = re.compile(
+    r"^(どちら(?:にする|を選ぶ)か)を[、,， ]*"
+    r"(?=何を(?:基準|目安|決め手|手がかり)に(?:し|決め|選び)ますか[？?]\Z)"
 )
 _THEME_REPEATED_CRITERION = re.compile(
     r"(?:基準|目安|決め手)[はを][、, ]*何を(?:基準|目安|決め手|手がかり)に"
@@ -86,9 +91,21 @@ _RECORD_REASON_BODY = re.compile(
     r"(?:そうした|その)理由は(?:何|なん)(?:ですか|でしたか|でしょうか)"
 )
 _CITATION_JOIN = "」と書いていましたが、"
+_RECORD_UNBOUND_QUESTION = re.compile(
+    r"(?:(?:そのとき|その場面では|そういうとき|それについて))?"
+    r"(?:どんな(?:とき|時|場合|条件|場面|こと)|どういう(?:とき|場合|条件|こと)|"
+    r"どのような(?:とき|場合|条件|こと)|どう(?:でした|思い(?:ました|ます)))"
+    r"(?:です|でした|でしょう)?か\Z"
+)
 _CONDITION_QUESTION = re.compile(r"どんな(?:とき|時|場合|条件|場面)|どういう(?:とき|場合|条件)")
 _STATED_REASON = re.compile(r"(?:した|いた|った|だった|くて|なので|なくて)(?:ので|から)|だったため|するため|のため")
 _RECORD_SENTENCE = re.compile(r"[^。！？!?\n\r]+")
+_FEELING_IN_SAME_EVENT = re.compile(
+    r"(?:て|[んい]で)(?<!そして)(?<!そうして)(?<!について)(?<!に関して)[、,，]\s*(?P<feeling>"
+    r"(?:(?:少し|ちょっと|とても|かなり|すごく|本当に|なんだか|やや)\s*)?"
+    r"(?:寂し[いか]|さびし[いか]|悲し[いか]|嬉し[いか]|うれし[いか]|悔し[いか]|怖[いか]|"
+    r"心細[いか]|つら[いか]|辛[いか]|不安(?:だ|に|を)|ほっと(?:し|して)|安心(?:し|して))[^、,，]*)"
+)
 _PENDING_ACTION = re.compile(
     r"まだ[^、,]*(?:途中|未着手|終わっていな|済んでいな)|やりかけ|"
     r"(?:作業|対応|準備|用事|仕事|勉強)[^、,]*(?:が残って|は残って)"
@@ -195,11 +212,12 @@ PLAN_SYSTEM_MESSAGE = f"""Emlisの「わたしを知る問い」で、本人に�
 記録の入口では、同じ場面について思考・行動・有効な本人回答を照合し、まだ本人が説明していない観点を一つ選びます。
 既に書いた理由、別表現の既出質問、スキップしたEmlisの問いを繰り返しません。理由が確認済みでも別の条件が有用ならCONDITIONにします。
 「〜ので、〜した」では、前半は本人が記した後半の理由です。その理由や、文中の相手がなぜそうしたかは尋ねません。本人に新しく確かめる点がなければskipです。
+「話が途切れて、少し寂しかった」のように本人が同じ文で出来事と気持ちをつないだ場合、その気持ちの理由をもう一度聞きません。もし本人がすでに述べたこととは別に、同じ場面での具体的な選択や条件が確かめられるなら、その対象をaskに明記します。
 記録のsourceはsourcesに実在するキーを一字ずつ写します。キーがa1ならa1です。キーにtext、sources、配列番号などを足しません。
 quoteはそのキーのtextに一度だけ現れる連続した6〜70文字です。理由と行動をまとめず、確認する行動・判断・状態を含む箇所を選び、文末の「。」「！」「？」と空白は含めません。別人の意図・過去の事実を推定しません。
 テーマの入口では、選択したテーマ内で、自分の基準や捉え方が分かる一点を選びます。関連記録がなくても生成し、sourceとquoteは空文字です。
 conditionは対象を限定する既知の短い条件をそのまま書きます。記録では原文にある語だけを使います。限定がなければ空文字です。
-askは何を知りたいかの短い日本語で、表示する質問文ではありません。資料から確認点を作れなければ {{"decision":"skip"}} を返します。
+askは何を知りたいかの短い日本語で、表示する質問文ではありません。「そのときのこと」のような広い話題で終えず、本人が答える行動・条件・判断の対象を含めます。資料から確認点を作れなければ {{"decision":"skip"}} を返します。
 思考・行動欄の出来事の理由を選ぶときは、askを「引用した内容の理由」とし、記録の動作を別の動作に言い換えません。
 {_FOCUS_GUIDE}
 記録の出力例 {{"decision":"ask","focus":"REASON","source":"r1.thought","quote":"夕方までに道具を片づけた","condition":"","ask":"引用した内容の理由"}}
@@ -218,6 +236,7 @@ WRITE_SYSTEM_MESSAGE = f"""確認点askを、本人に丁寧に尋ねる自然�
 {_DATA_BOUNDARY}
 記録の入口では引用が質問の直前に表示されます。questionには引用を繰り返さず、引用後に続く質問だけを書きます。
 askにある確認対象を文面で明示します。「相手の反応」を確認するなら、どんな反応かを聞きます。「どんなときですか」だけに縮めません。conditionが空でなければその語を文面に残します。
+rewriteがあれば理由を読み、askに沿って、本人が何の条件・選択・判断について答えるかを質問の中で分かるように書き直します。
 引用と既知の条件のほかに出来事・時点・真意・原因・評価を前提として足しません。
 askが「引用した内容の理由」の場合は、quoteで示された内容に対して、動作や対象を言い換えず理由だけを尋ねます。「どんな理由からですか？」「そうしたのはなぜですか？」のように書き、他の動作を足しません。conditionがあれば「conditionのときに、そうしたのはなぜですか？」のように、実際の条件の語を先頭に置きます。
 テーマの入口では特定の人や本人の出来事を前提にせず、選択したテーマで本人が自由に答えられる形にします。
@@ -271,7 +290,7 @@ def _reading_system_message(*, answer):
 テーマ入口ではsourceとquoteを空にし、選択テーマと問いの観点が実際に一致するか確かめます。記録や過去の回答がゼロでも成立します。その人の過去の事実を前提にせず、テーマに沿った初めての基準を尋ねる場合はpremise_supportedとnew_informationをtrueにします。
 conditionは文面が明示した既知の短い限定条件をそのまま書き、限定がなければ空文字です。推測して補わないでください。
 premise_supportedは、引用外も含めて原文にない出来事・主体・時点・評価・原因を前提にせず、テーマにも合う時だけtrueにします。
-new_informationは、同じ場面について有効な回答・訂正・原文で既に答えた内容を言い換えて聞かず、既出・スキップと同じ観点ではなく、本人の判断が具体的に分かる時だけtrueにします。既知の理由と未確認の別条件は区別します。
+new_informationは、同じ場面について有効な回答・訂正・原文で既に答えた内容を言い換えて聞かず、既出・スキップと同じ観点ではなく、本人の判断が具体的に分かる時だけtrueにします。既知の理由と未確認の別条件は区別します。引用からも何の選択や条件を答えればよいか分からないときはunclearです。
 マップと過去の問い自体は本人の答えや事実ではありません。別人や別の時点の答えを本人の答えにせず、前提や重複を確かめられなければ拒否します。
 記録で「不安があっても説明会に行った」の理由を初めて聞く場合の採用例
 {{"verdict":"accept","focus":"REASON","source":"r1.thought","quote":"不安があっても説明会に行った","condition":"","premise_supported":true,"new_information":true}}。
@@ -612,7 +631,13 @@ def _stated_reason(anchor):
     text = anchor.source.text
     prefix = re.split(r"[。！？!?\n\r]", text[:anchor.start])[-1]
     suffix = re.split(r"[。！？!?\n\r]", text[anchor.end:])[0]
-    return bool(_STATED_REASON.search(prefix + anchor.quote) or _REASON_FINISH.search(suffix.strip()))
+    if _STATED_REASON.search(prefix + anchor.quote) or _REASON_FINISH.search(suffix.strip()):
+        return True
+    # A reason-only follow-up has no new target when this feeling is already
+    # written as part of the preceding event in the same sentence.
+    start, end = len(prefix), len(prefix) + len(anchor.quote)
+    return any(start < match.end("feeling") and match.start("feeling") < end
+               for match in _FEELING_IN_SAME_EVENT.finditer(prefix + anchor.quote + suffix))
 
 
 def _foreign_reason_anchor(anchor):
@@ -1246,6 +1271,8 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
     body = _accept_surface(raw, plan=plan, theme=direction["theme"])
     if body is not None:
         body = _without_repeated_introduction(body, scene, repeated_introductions)
+        if angle_id == "priority" and decision_in_scene:
+            body = _THEME_CHOICE_CRITERION_PARTICLE.sub(r"\1は、", body)
         body = _THEME_REDUNDANT_LIMIT.sub(r"\1\2\3", body)
         body = body.replace("を取りかかる", "に取りかかる")
     if (body is None or len(body) < 7 or not _THEME_QUESTION_WORD.search(body) or not _THEME_QUESTION_END.search(body)
@@ -1284,14 +1311,22 @@ async def _review_theme_candidate(raw, *, plan, direction, scene, key, material,
 
 
 def _without_repeated_introduction(body, scene, repeated_introductions):
-    openings = {_THEME_SCENE_COMMA.sub("", text) for text in (scene, *repeated_introductions)}
+    def opening_key(text):
+        return _THEME_HESITATION_END.sub("迷うとき", _normal(text))
+
+    openings = {opening_key(text) for text in (scene, *repeated_introductions)}
     while True:
         for comma in _THEME_SCENE_COMMA.finditer(body):
-            if _THEME_SCENE_COMMA.sub("", body[:comma.start()]) in openings:
+            if opening_key(body[:comma.start()]) in openings:
                 body = body[comma.end():].lstrip()
                 break
         else:
             return body
+
+
+def _unbound_record_question(question, plan):
+    return bool(question and plan.anchor and plan.focus != "REASON"
+                and _RECORD_UNBOUND_QUESTION.fullmatch(_normal(question.partition(_CITATION_JOIN)[2])))
 
 
 async def generate_question(prepared, sources, *, material, generate):
@@ -1347,7 +1382,11 @@ async def generate_question(prepared, sources, *, material, generate):
         writer = _RECORD_ALTERNATIVE_WRITE_MESSAGE
         writing["alternatives"] = alternative["alternatives"]
     question = _accept_surface(await generate(writer, writing), plan=plan, theme=theme)
-    if question is None:
+    if _unbound_record_question(question, plan):
+        question = _accept_surface(await generate(writer, {
+            **writing, "rewrite": "引用の後の問いに尋ねる対象がありません。askにある対象を明示してください。",
+        }), plan=plan, theme=theme)
+    if question is None or _unbound_record_question(question, plan):
         return QuestionRun(None, "rejected", rejection_stage="writer")
 
     candidate = _candidate(question, plan=plan, lane=lane, material=material)

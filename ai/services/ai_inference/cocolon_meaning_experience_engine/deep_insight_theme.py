@@ -610,6 +610,10 @@ THEME_TARGET_FORMS = {
 
 # These openings only repeat the authored scene for the specified angle.
 # Match the entire leading clause, so a new time, place, or condition survives.
+_CONTACT_CHANNEL_OPENINGS = (
+    "大切な話をメッセージで伝えるか直接伝えるか迷ったとき",
+    "大切な話をメッセージで伝えるか直接話すか迷ったとき",
+)
 THEME_REPEATED_INTRODUCTIONS = {
     ("人間関係", "asking_help", "priority"): (
         "誰かに助けを求めるかどうか",
@@ -617,6 +621,13 @@ THEME_REPEATED_INTRODUCTIONS = {
         "誰かに助けを求めるかどうかを決める際",
         "誰かに助けを求める際",
     ),
+    ("人間関係", "contact_channel", "priority"): (*_CONTACT_CHANNEL_OPENINGS,
+        "メッセージにするか直接伝えるかは",
+        "メッセージで伝えるか直接話すかは",
+    ),
+    ("人間関係", "contact_channel", "change"): _CONTACT_CHANNEL_OPENINGS,
+    ("人間関係", "contact_channel", "boundary"): _CONTACT_CHANNEL_OPENINGS,
+    ("人間関係", "contact_channel", "cue"): _CONTACT_CHANNEL_OPENINGS,
     ("人間関係", "disagreement", "priority"): ("意見が分かれたとき",),
     ("人間関係", "feedback", "first_action"): ("改善してほしいことを伝えるとき",),
     ("自分の価値観", "public_private", "priority"): (
@@ -665,6 +676,7 @@ THEME_REPEATED_INTRODUCTIONS = {
 
 # The displayed scene itself already presents the two alternatives.
 THEME_DECISION_IN_SCENE = frozenset({
+    ("人間関係", "contact_channel", "priority"),
     ("人間関係", "asking_help", "priority"),
     ("自分の価値観", "ownership", "priority"),
     ("自分の価値観", "public_private", "priority"),
