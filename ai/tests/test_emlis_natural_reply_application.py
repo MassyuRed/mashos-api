@@ -1522,6 +1522,8 @@ def test_first_skipped_distress_excludes_past_negation():
 
 @pytest.mark.parametrize('tier', ['free', 'plus', 'premium'])
 def test_first_unanswered_skip_only_passes_current_input(natural_case, qdb, monkeypatch, tier):
+    from cocolon_meaning_experience_engine import natural_reply
+
     user, parent, service, calls = natural_case
     qdb.query('update public.profiles set subscription_tier=$2 where id=$1', [user, tier])
     memo = 'つらかったんです。'
@@ -1533,6 +1535,11 @@ def test_first_unanswered_skip_only_passes_current_input(natural_case, qdb, monk
     assert initial['state'] == 'AWAITING_ANSWER', initial
     first = json.loads(calls[0].material_json)
     assert [record['input_id'] for record in first['past_user_records']] == ([] if tier == 'free' else [past])
+
+    def reject_frame_lookup(*_args):
+        raise AssertionError('first unanswered skip must omit even current-entry frame feedback')
+
+    monkeypatch.setattr(natural_reply, '_frame_feedback_material', reject_frame_lookup)
 
     final = run(service.action(user, initial['thread_id'], action='skip',
         question_id=initial['pending_question']['question_id'], expected_revision=initial['revision'],

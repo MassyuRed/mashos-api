@@ -1025,8 +1025,17 @@ class EmlisThreadService:
         from cocolon_meaning_experience_engine.natural_reply_meaning import (
             SCHEMA as MEANING_REVIEW_SCHEMA, compare_reply_meaning)
         t = snapshot["thread"]
+        correcting = bool(_corrections(snapshot))
+        current_only = (t['data'].get('natural_question_stop') == 'skip' and t['issued_count'] == 1
+                        and not t.get('latest_answer_event_id') and not correcting)
+        if current_only:
+            # An in-flight skip from an older version must retain its original
+            # writer identity. New skips confine both triage and writing.
+            skip_receipt = (self._natural_receipt(snapshot, 'NATURAL_REPLY_RECEIVED')
+                            or self._natural_receipt(snapshot, 'NATURAL_REPLY_CALL_STARTED'))
+            current_only = skip_receipt is None or skip_receipt['payload'].get('first_skip_current_only') is True
         # Admit and triage before consulting the optional question adapter.
-        material, safety = prepare_natural_reply(_request(snapshot))
+        material, safety = prepare_natural_reply(_request(snapshot), current_only=current_only)
         if material.source_prefix_ref != t["source_prefix_ref"]:
             raise ValueError("natural_reply_source_changed")
         if not safety.normal_observation_allowed:
@@ -1034,7 +1043,6 @@ class EmlisThreadService:
             # support/emergency. Neither is sent to the ordinary provider.
             code = "safe_state_answer_owner_required" if safety.safe_state_answer_allowed else "separate_safety_owner_required"
             return await self._finish(user_id, snapshot, body_state="UNAVAILABLE", state="COMPLETED", failure=code)
-        correcting = bool(_corrections(snapshot))
         if correcting:
             # Free-form correction is not a finite answer checkpoint or a new question.
             next_question, prepared_meaning = None, None
@@ -1050,11 +1058,6 @@ class EmlisThreadService:
         received = self._natural_receipt(snapshot, "NATURAL_REPLY_RECEIVED")
         started = self._natural_receipt(snapshot, "NATURAL_REPLY_CALL_STARTED")
         prior = received or started
-        # A receipt created before this policy keeps its original writer on
-        # resume. A new first-question skip never sends optional paid context.
-        current_only = (prior['payload'].get('first_skip_current_only') is True if prior else
-            t['data'].get('natural_question_stop') == 'skip' and t['issued_count'] == 1
-            and not t.get('latest_answer_event_id') and not correcting)
         if prior is not None:
             context_version = prior["payload"].get("writer_context_version")
         elif not correcting and unspecified_concern_focus(snapshot["original"]):

@@ -731,7 +731,7 @@ def prepare_natural_reply(request, *, use_meaning_support=False, response_stage=
         included_ids.add(source.source_guard[0])
     material = {"current": _material(original), "current_input_id": current_id,
                 "current_answers": _answers(admitted), "past_user_records": history,
-                "user_frame_feedback": ([] if scope_unspecified_concern
+                "user_frame_feedback": ([] if current_only or scope_unspecified_concern
                                         else _frame_feedback_material(admitted, included_ids))}
     if admitted.control.interpretation_corrections:
         material["interpretation_corrections"] = _interpretation_corrections(admitted)
